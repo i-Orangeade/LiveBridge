@@ -1,0 +1,10 @@
+{
+  "name": "websocketpp",
+  "version-string": "0.8.2",
+  "description": "WebSocket++ is a header-only C++ library that implements RFC6455.",
+  "homepage": "https://github.com/zaphoyd/websocketpp",
+  "dependencies": [
+    "asio"
+  ]
+}
+

@@ -1,0 +1,51 @@
+Package: vcpkg-cmake-config
+Version: 2024-05-23
+Architecture: x64-windows
+Multi-Arch: same
+Abi: 77b03ec5802c2c9fd12aa713994cd4f16203c9b420dfd8d360f2429427084925
+Status: install ok installed
+
+Package: vcpkg-cmake
+Version: 2024-04-23
+Architecture: x64-windows
+Multi-Arch: same
+Abi: 6e20b9930599e06a56c5aa087fb192f24cf4d9e3820adc34a1c0d43e673dde17
+Status: install ok installed
+
+Package: asio
+Version: 1.32.0
+Depends: vcpkg-cmake, vcpkg-cmake-config
+Architecture: x64-windows
+Multi-Arch: same
+Abi: 69585e98b66f3f8a4471ca9892c76138c58c7df34c2689376f355c5a9cd4ef36
+Description: Asio is a cross-platform C++ library for network and low-level I/O programming that provides developers with a consistent asynchronous model using a modern C++ approach.
+Status: install ok installed
+
+Package: nlohmann-json
+Version: 3.12.0
+Port-Version: 2
+Depends: vcpkg-cmake, vcpkg-cmake-config
+Architecture: x64-windows
+Multi-Arch: same
+Abi: f0ba4543ddc3a0417eb5a0c449de0f07d6a82f80e5c75f1091f2c48ea438c8ec
+Description: JSON for Modern C++
+Status: install ok installed
+
+Package: sdl2
+Version: 2.32.10
+Depends: vcpkg-cmake, vcpkg-cmake-config
+Architecture: x64-windows
+Multi-Arch: same
+Abi: 4206776a1cc8cd52a6253c4b895065590f5ddf2569637bd07a2c4200d0ddfc57
+Description: Simple DirectMedia Layer is a cross-platform development library designed to provide low level access to audio, keyboard, mouse, joystick, and graphics hardware via OpenGL and Direct3D.
+Status: install ok installed
+
+Package: websocketpp
+Version: 0.8.2
+Depends: asio
+Architecture: x64-windows
+Multi-Arch: same
+Abi: 90f26b3caa79567dcf24a05f3f174008ae01a15d4c00aaaf9f06c9f322a50510
+Description: WebSocket++ is a header-only C++ library that implements RFC6455.
+Status: install ok installed
+

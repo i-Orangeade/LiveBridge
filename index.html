@@ -1,0 +1,956 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <title>WebRTC 1v1 通话演示</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <!-- 内置 Tailwind 风格的实用类（只保留本页面需要的子集，避免外部依赖） -->
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg-dark: #020617;
+      --bg-card: #020817;
+      --bg-elevated: #020617;
+      --accent: #38bdf8;
+      --accent-soft: rgba(56, 189, 248, 0.15);
+      --accent-strong: #0ea5e9;
+      --danger: #ef4444;
+      --danger-soft: rgba(239, 68, 68, 0.15);
+      --success: #22c55e;
+      --success-soft: rgba(34, 197, 94, 0.15);
+      --border-subtle: rgba(148, 163, 184, 0.3);
+      --text-main: #e5e7eb;
+      --text-muted: #9ca3af;
+    }
+    * {
+      box-sizing: border-box;
+    }
+    html, body {
+      margin: 0;
+      padding: 0;
+      height: 100%;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: radial-gradient(circle at top, #0f172a, #020617 55%);
+      color: var(--text-main);
+    }
+    body {
+      display: flex;
+      align-items: stretch;
+      justify-content: center;
+    }
+    /* 布局容器 */
+    .page-shell {
+      display: flex;
+      flex-direction: column;
+      width: 100%;
+      max-width: 1280px;
+      padding: 16px;
+      gap: 12px;
+    }
+    .card {
+      background: radial-gradient(circle at top left, rgba(56, 189, 248, 0.05), rgba(15, 23, 42, 0.98));
+      border-radius: 18px;
+      border: 1px solid rgba(148, 163, 184, 0.3);
+      box-shadow:
+        0 24px 60px rgba(15, 23, 42, 0.7),
+        0 0 0 1px rgba(15, 23, 42, 0.9);
+      display: flex;
+      flex-direction: column;
+      padding: 16px 20px 18px;
+      backdrop-filter: blur(16px);
+    }
+    /* 顶部导航栏 */
+    .navbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+    .nav-left {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .logo-circle {
+      width: 32px;
+      height: 32px;
+      border-radius: 9999px;
+      background: radial-gradient(circle at 30% 30%, #22c55e, #0ea5e9);
+      box-shadow: 0 0 32px rgba(56, 189, 248, 0.6);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: white;
+      font-size: 14px;
+      font-weight: 700;
+    }
+    .nav-title {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+    .nav-title-main {
+      font-size: 16px;
+      font-weight: 600;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+    .nav-title-sub {
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+    .status-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 10px;
+      border-radius: 9999px;
+      background: rgba(15, 23, 42, 0.85);
+      border: 1px solid rgba(148, 163, 184, 0.5);
+      font-size: 12px;
+    }
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 9999px;
+      background: var(--danger);
+      box-shadow: 0 0 8px rgba(239, 68, 68, 0.9);
+      transition: background 150ms ease, box-shadow 150ms ease;
+    }
+    .status-dot.connected {
+      background: var(--success);
+      box-shadow: 0 0 12px rgba(34, 197, 94, 0.9);
+    }
+    .status-text {
+      color: var(--text-muted);
+    }
+    /* 主内容区 */
+    .main-layout {
+      display: grid;
+      grid-template-columns: minmax(0, 1.3fr) minmax(260px, 0.7fr);
+      gap: 16px;
+      margin-top: 10px;
+    }
+    @media (max-width: 900px) {
+      .main-layout {
+        grid-template-columns: minmax(0, 1fr);
+      }
+    }
+    .video-area {
+      position: relative;
+      overflow: hidden;
+      border-radius: 18px;
+      background: radial-gradient(circle at top, #0b1120, #020617);
+      border: 1px solid rgba(30, 64, 175, 0.7);
+      box-shadow:
+        0 30px 80px rgba(15, 23, 42, 0.9),
+        0 0 0 1px rgba(30, 64, 175, 0.6);
+      min-height: 320px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+    }
+    .video-gradient-overlay {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      background:
+        radial-gradient(circle at top left, rgba(56, 189, 248, 0.16), transparent 55%),
+        radial-gradient(circle at bottom right, rgba(59, 130, 246, 0.2), transparent 55%);
+      mix-blend-mode: screen;
+      opacity: 0.85;
+    }
+    .video-wrapper {
+      position: relative;
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 16px;
+      z-index: 1;
+    }
+    .video-remote {
+      position: relative;
+      width: 100%;
+      height: 100%;
+      border-radius: 16px;
+      overflow: hidden;
+      background: radial-gradient(circle at center, #020617, #020617 55%, #020617);
+      border: 1px solid rgba(15, 23, 42, 0.9);
+      box-shadow: inset 0 0 0 1px rgba(15, 23, 42, 0.9);
+    }
+    video {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      background: #020617;
+    }
+    .video-placeholder {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-direction: column;
+      gap: 8px;
+      color: var(--text-muted);
+      font-size: 14px;
+      backdrop-filter: blur(6px);
+    }
+    .pulse-ring {
+      width: 40px;
+      height: 40px;
+      border-radius: 9999px;
+      border: 2px solid rgba(56, 189, 248, 0.5);
+      border-top-color: rgba(56, 189, 248, 1);
+      animation: spin 1.2s linear infinite;
+    }
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+    .mini-local {
+      position: absolute;
+      right: 14px;
+      bottom: 14px;
+      width: 220px;
+      max-width: 38%;
+      aspect-ratio: 16 / 9;
+      border-radius: 14px;
+      overflow: hidden;
+      border: 1px solid rgba(148, 163, 184, 0.5);
+      box-shadow:
+        0 18px 40px rgba(15, 23, 42, 0.9),
+        0 0 0 1px rgba(15, 23, 42, 0.9);
+      background: #020617;
+      z-index: 2;
+    }
+    .mini-local video {
+      transform: scaleX(-1); /* 镜像本地预览，更符合用户直觉 */
+    }
+    /* 底部控制栏 */
+    .controls-bar {
+      position: relative;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+      padding: 12px 0 4px;
+      z-index: 1;
+    }
+    .control-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      padding: 6px 12px;
+      border-radius: 9999px;
+      background: rgba(15, 23, 42, 0.9);
+      border: 1px solid rgba(30, 64, 175, 0.8);
+      box-shadow: 0 10px 30px rgba(15, 23, 42, 0.9);
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+    .timer-text {
+      font-variant-numeric: tabular-nums;
+    }
+    .control-buttons {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .btn-circle {
+      width: 46px;
+      height: 46px;
+      border-radius: 9999px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border: 1px solid rgba(148, 163, 184, 0.4);
+      background: radial-gradient(circle at top, rgba(15, 23, 42, 1), rgba(15, 23, 42, 0.98));
+      color: var(--text-main);
+      cursor: pointer;
+      transition: transform 120ms ease, box-shadow 120ms ease, background 120ms ease, border-color 120ms ease;
+    }
+    .btn-circle:hover {
+      transform: translateY(-1px) scale(1.02);
+      box-shadow: 0 15px 40px rgba(15, 23, 42, 0.9);
+      border-color: rgba(148, 163, 184, 0.9);
+    }
+    .btn-circle:active {
+      transform: scale(0.97);
+      box-shadow: 0 6px 20px rgba(15, 23, 42, 0.9);
+    }
+    .btn-accent {
+      background: radial-gradient(circle at top, var(--accent-strong), #0f172a);
+      border-color: rgba(56, 189, 248, 0.9);
+      box-shadow: 0 18px 45px rgba(56, 189, 248, 0.45);
+    }
+    .btn-accent:hover {
+      background: radial-gradient(circle at top, #38bdf8, #0b1120);
+    }
+    .btn-danger {
+      background: radial-gradient(circle at top, var(--danger), #111827);
+      border-color: rgba(239, 68, 68, 0.9);
+      box-shadow: 0 18px 45px rgba(248, 113, 113, 0.45);
+    }
+    .btn-danger:hover {
+      background: radial-gradient(circle at top, #f97373, #0b1120);
+    }
+    .btn-toggle.off {
+      opacity: 0.6;
+      border-color: rgba(75, 85, 99, 0.9);
+      box-shadow: none;
+    }
+    .btn-toggle.off svg {
+      opacity: 0.7;
+    }
+    .btn-toggle.off::after {
+      content: "";
+      position: absolute;
+      width: 1px;
+      height: 26px;
+      background: rgba(239, 68, 68, 0.85);
+      transform: rotate(-35deg);
+      pointer-events: none;
+    }
+    .btn-icon {
+      width: 22px;
+      height: 22px;
+    }
+    /* 侧边栏 */
+    .sidebar {
+      background: radial-gradient(circle at top right, rgba(56, 189, 248, 0.12), rgba(15, 23, 42, 0.98));
+      border-radius: 18px;
+      border: 1px solid rgba(148, 163, 184, 0.35);
+      padding: 16px 18px 18px;
+      box-shadow:
+        0 20px 50px rgba(15, 23, 42, 0.9),
+        0 0 0 1px rgba(15, 23, 42, 0.9);
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+    .sidebar-header {
+      font-size: 14px;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .sidebar-header span {
+      color: var(--text-muted);
+      font-size: 12px;
+    }
+    .field-group {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      font-size: 13px;
+    }
+    .field-label {
+      color: var(--text-muted);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .field-label span.key {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+      font-size: 11px;
+      padding: 1px 6px;
+      border-radius: 9999px;
+      border: 1px solid rgba(55, 65, 81, 1);
+      background: rgba(15, 23, 42, 0.9);
+      color: var(--text-muted);
+    }
+    .input-row {
+      display: flex;
+      gap: 8px;
+    }
+    .input {
+      flex: 1;
+      padding: 8px 10px;
+      border-radius: 9999px;
+      border: 1px solid rgba(51, 65, 85, 0.9);
+      background: rgba(15, 23, 42, 0.9);
+      color: var(--text-main);
+      font-size: 13px;
+      outline: none;
+      transition: border-color 120ms ease, box-shadow 120ms ease, background 120ms ease;
+    }
+    .input:focus {
+      border-color: rgba(56, 189, 248, 0.9);
+      box-shadow: 0 0 0 1px rgba(56, 189, 248, 0.35);
+      background: rgba(15, 23, 42, 0.98);
+    }
+    .btn-primary {
+      padding: 8px 14px;
+      border-radius: 9999px;
+      border: 1px solid rgba(56, 189, 248, 0.9);
+      background: radial-gradient(circle at top, var(--accent-strong), #0f172a);
+      color: white;
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: transform 120ms ease, box-shadow 120ms ease, background 120ms ease;
+      box-shadow: 0 14px 40px rgba(56, 189, 248, 0.5);
+    }
+    .btn-primary:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 18px 50px rgba(56, 189, 248, 0.7);
+      background: radial-gradient(circle at top, #38bdf8, #020617);
+    }
+    .btn-primary:active {
+      transform: scale(0.97);
+      box-shadow: 0 10px 28px rgba(56, 189, 248, 0.6);
+    }
+    .btn-secondary {
+      padding: 6px 10px;
+      border-radius: 9999px;
+      border: 1px solid rgba(55, 65, 81, 1);
+      background: rgba(15, 23, 42, 0.95);
+      color: var(--text-muted);
+      font-size: 11px;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+    }
+    .pill-muted {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 2px 8px;
+      border-radius: 9999px;
+      background: rgba(15, 23, 42, 0.9);
+      border: 1px solid rgba(51, 65, 85, 0.9);
+      font-size: 11px;
+      color: var(--text-muted);
+    }
+    .text-xs {
+      font-size: 11px;
+      color: var(--text-muted);
+    }
+    .mt-1 { margin-top: 4px; }
+    .mt-2 { margin-top: 6px; }
+  </style>
+</head>
+<body>
+  <div class="page-shell">
+    <!-- 顶部导航栏 -->
+    <div class="card navbar">
+      <div class="nav-left">
+        <div class="logo-circle">RT</div>
+        <div class="nav-title">
+          <div class="nav-title-main">Browser WebRTC Call</div>
+          <div class="nav-title-sub">浏览器原生 1 对 1 音视频通话 Demo</div>
+        </div>
+      </div>
+      <div class="status-pill">
+        <span id="statusDot" class="status-dot"></span>
+        <span id="statusText" class="status-text">未连接</span>
+      </div>
+    </div>
+
+    <!-- 主区域：左侧视频 + 右侧控制面板 -->
+    <div class="main-layout">
+      <!-- 视频区域 -->
+      <div class="video-area">
+        <div class="video-gradient-overlay"></div>
+        <div class="video-wrapper">
+          <div class="video-remote">
+            <video id="remoteVideo" playsinline autoplay></video>
+            <div id="remotePlaceholder" class="video-placeholder">
+              <div class="pulse-ring"></div>
+              <div>等待远端加入房间...</div>
+              <div class="text-xs">请输入相同房间号，在两台浏览器中点击连接</div>
+            </div>
+
+            <div class="mini-local">
+              <video id="localVideo" muted playsinline autoplay></video>
+            </div>
+          </div>
+        </div>
+
+        <!-- 底部控制栏 -->
+        <div class="controls-bar">
+          <div class="control-pill">
+            <span>通话时长</span>
+            <span id="callTimer" class="timer-text">00:00</span>
+          </div>
+          <div class="control-buttons">
+            <button id="btnToggleCam" class="btn-circle btn-toggle" title="切换摄像头开关">
+              <!-- camera icon -->
+              <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M4 7a2 2 0 0 1 2-2h7a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z" />
+                <path d="M16 9l4-3v12l-4-3" />
+              </svg>
+            </button>
+
+            <button id="btnToggleMic" class="btn-circle btn-toggle" title="切换麦克风开关">
+              <!-- mic icon -->
+              <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M12 3a3 3 0 0 0-3 3v5a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3z" />
+                <path d="M19 10a7 7 0 0 1-14 0" />
+                <path d="M12 17v4" />
+                <path d="M8 21h8" />
+              </svg>
+            </button>
+
+            <button id="btnHangup" class="btn-circle btn-danger" title="挂断通话">
+              <!-- phone-x icon -->
+              <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M4.5 8.5C7 6.5 9.5 5.5 12 5.5s5 1 7.5 3" />
+                <path d="M4.5 8.5L3 11.5l3 2.5" />
+                <path d="M19.5 8.5L21 11.5l-3 2.5" />
+              </svg>
+            </button>
+
+            <button id="btnSwitchCam" class="btn-circle" title="切换摄像头">
+              <!-- switch-camera icon -->
+              <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M5 7h3l2-2h4l2 2h3a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-6a2 2 0 0 1 2-2z" />
+                <path d="M10 12l-2 2-2-2" />
+                <path d="M14 12l2-2 2 2" />
+              </svg>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 侧边栏：房间/服务器配置 -->
+      <aside class="sidebar">
+        <div class="sidebar-header">
+          <div>会话设置</div>
+          <button id="btnGenerateRoom" class="btn-secondary" type="button">
+            生成房间号
+          </button>
+        </div>
+
+        <div class="field-group">
+          <label class="field-label">
+            房间号
+            <span class="key">Room ID</span>
+          </label>
+          <div class="input-row">
+            <input id="roomInput" class="input" placeholder="例如：webrtc-demo-001" />
+          </div>
+          <div class="text-xs mt-1">两端使用相同房间号，即可进行 1 对 1 通话。</div>
+        </div>
+
+        <div class="field-group">
+          <label class="field-label">
+            信令服务器地址
+            <span class="key">ws://</span>
+          </label>
+          <div class="input-row">
+            <input id="serverInput" class="input" placeholder="ws://127.0.0.1:8080" />
+          </div>
+          <div class="text-xs mt-1">默认使用本机 8080 端口，你可根据实际部署修改。</div>
+        </div>
+
+        <div class="field-group">
+          <label class="field-label">
+            操作
+          </label>
+          <div class="input-row">
+            <button id="btnConnect" class="btn-primary" type="button">
+              连接 &amp; 加入房间
+            </button>
+          </div>
+          <div class="mt-2">
+            <span class="pill-muted" id="peerRole">角色：未连接</span>
+          </div>
+        </div>
+
+        <div class="field-group">
+          <label class="field-label">提示</label>
+          <div class="text-xs">
+            1. 在 <b>两台浏览器</b> 中打开本页面。<br />
+            2. 输入相同房间号和服务器地址。<br />
+            3. 分别点击「连接 &amp; 加入房间」，任一端点击控制栏上的摄像头按钮即可发起通话。<br />
+          </div>
+        </div>
+      </aside>
+    </div>
+  </div>
+
+  <script>
+    // ================= WebRTC + 信令逻辑 =================
+    // 说明：
+    //   - 前端通过 WebSocket 与 Node.js 信令服务器通信；
+    //   - 消息格式为 JSON：{ type: 'join/offer/answer/candidate/leave', ... }；
+    //   - 房间内最多 2 人，简化为 1 对 1 通话场景。
+
+    const statusDot = document.getElementById('statusDot');
+    const statusText = document.getElementById('statusText');
+    const roomInput = document.getElementById('roomInput');
+    const serverInput = document.getElementById('serverInput');
+    const btnConnect = document.getElementById('btnConnect');
+    const btnGenerateRoom = document.getElementById('btnGenerateRoom');
+    const btnToggleCam = document.getElementById('btnToggleCam');
+    const btnToggleMic = document.getElementById('btnToggleMic');
+    const btnHangup = document.getElementById('btnHangup');
+    const btnSwitchCam = document.getElementById('btnSwitchCam');
+    const localVideo = document.getElementById('localVideo');
+    const remoteVideo = document.getElementById('remoteVideo');
+    const remotePlaceholder = document.getElementById('remotePlaceholder');
+    const callTimerEl = document.getElementById('callTimer');
+    const peerRoleEl = document.getElementById('peerRole');
+
+    // 基本状态
+    let ws = null;
+    let roomId = '';
+    let clientId = null;
+    let isConnected = false;
+    let isCaller = false;
+    let peerReady = false;
+    let callStarted = false;
+
+    let pc = null;
+    let localStream = null;
+    let remoteStream = null;
+    let callStartTime = null;
+    let callTimer = null;
+    let currentCamIndex = 0;
+    let availableCams = [];
+
+    const rtcConfig = {
+      iceServers: [
+        { urls: 'stun:stun.l.google.com:19302' }
+      ]
+    };
+
+    function setStatus(connected, text) {
+      isConnected = connected;
+      statusDot.classList.toggle('connected', connected);
+      statusText.textContent = text;
+    }
+
+    function setRole(roleText) {
+      peerRoleEl.textContent = '角色：' + roleText;
+    }
+
+    function updateTimer() {
+      if (!callStartTime) {
+        callTimerEl.textContent = '00:00';
+        return;
+      }
+      const elapsed = Math.floor((Date.now() - callStartTime) / 1000);
+      const m = String(Math.floor(elapsed / 60)).padStart(2, '0');
+      const s = String(elapsed % 60).padStart(2, '0');
+      callTimerEl.textContent = m + ':' + s;
+    }
+
+    function startCallTimer() {
+      if (callTimer) clearInterval(callTimer);
+      callStartTime = Date.now();
+      callTimer = setInterval(updateTimer, 1000);
+    }
+
+    function stopCallTimer() {
+      if (callTimer) clearInterval(callTimer);
+      callTimer = null;
+      callStartTime = null;
+      updateTimer();
+    }
+
+    function randomId() {
+      return Math.random().toString(36).slice(2, 10);
+    }
+
+    async function enumerateCameras() {
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      availableCams = devices.filter(d => d.kind === 'videoinput');
+    }
+
+    async function getUserMediaForCall() {
+      // 如果已经有流，直接返回
+      if (localStream) return localStream;
+
+      await enumerateCameras();
+      let videoConstraints = true;
+      if (availableCams.length > 0) {
+        const deviceId = availableCams[currentCamIndex % availableCams.length].deviceId;
+        videoConstraints = { deviceId: { exact: deviceId } };
+      }
+
+      try {
+        // 采集本地音视频
+        localStream = await navigator.mediaDevices.getUserMedia({
+          video: videoConstraints,
+          audio: true
+        });
+      } catch (e) {
+        // file:// 或权限拒绝时，会走到这里
+        console.error('getUserMedia 失败:', e);
+        alert('获取摄像头/麦克风失败。\n\n' +
+              '常见原因：\n' +
+              '1）未授权浏览器摄像头/麦克风权限\n' +
+              '2）页面不是安全上下文（请用 http://localhost 打开，而不是 file:// 双击）\n\n' +
+              '错误信息：' + (e && e.message ? e.message : e));
+        throw e;
+      }
+
+      localVideo.srcObject = localStream;
+      return localStream;
+    }
+
+    async function createPeerConnection() {
+      pc = new RTCPeerConnection(rtcConfig);
+
+      pc.onicecandidate = (event) => {
+        if (event.candidate) {
+          sendSignal({
+            type: 'candidate',
+            candidate: event.candidate
+          });
+        }
+      };
+
+      pc.ontrack = (event) => {
+        if (!remoteStream) {
+          remoteStream = new MediaStream();
+          remoteVideo.srcObject = remoteStream;
+        }
+        remoteStream.addTrack(event.track);
+        remotePlaceholder.style.display = 'none';
+      };
+
+      pc.onconnectionstatechange = () => {
+        if (pc.connectionState === 'connected') {
+          startCallTimer();
+        }
+        if (pc.connectionState === 'disconnected' ||
+            pc.connectionState === 'failed' ||
+            pc.connectionState === 'closed') {
+          stopCallTimer();
+        }
+      };
+
+      // 将本地流 track 添加到 PeerConnection
+      const stream = await getUserMediaForCall();
+      stream.getTracks().forEach(track => pc.addTrack(track, stream));
+    }
+
+    function closePeerConnection() {
+      if (pc) {
+        pc.close();
+        pc = null;
+      }
+      if (remoteStream) {
+        remoteStream.getTracks().forEach(t => t.stop());
+        remoteStream = null;
+      }
+      remoteVideo.srcObject = null;
+      remotePlaceholder.style.display = '';
+      stopCallTimer();
+    }
+
+    function sendSignal(payload) {
+      if (!ws || ws.readyState !== WebSocket.OPEN) return;
+      const msg = Object.assign({}, payload, {
+        roomId,
+        clientId
+      });
+      ws.send(JSON.stringify(msg));
+    }
+
+    // ================= WebSocket 信令 =================
+    function connectSignaling() {
+      if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) {
+        return;
+      }
+
+      const serverUrl = serverInput.value.trim() || 'ws://127.0.0.1:8080';
+      roomId = roomInput.value.trim();
+      if (!roomId) {
+        alert('请先输入房间号');
+        return;
+      }
+
+      clientId = randomId();
+      isCaller = false;
+
+      ws = new WebSocket(serverUrl);
+
+      ws.onopen = () => {
+        setStatus(true, '已连接信令服务器');
+        setRole('房客（待确定）');
+        sendSignal({ type: 'join' });
+      };
+
+      ws.onmessage = async (event) => {
+        let data;
+        try {
+          data = JSON.parse(event.data);
+        } catch {
+          return;
+        }
+        if (data.clientId === clientId) return; // 忽略自己发的
+
+        switch (data.type) {
+          case 'ready':
+            peerReady = true;
+            // 由服务器分配稳定角色，避免双方同时 createOffer
+            if (data.role === 'caller') {
+              isCaller = true;
+              setRole('呼叫方（可发起）');
+            } else {
+              isCaller = false;
+              setRole('被呼叫方（等待呼叫）');
+            }
+            break;
+          case 'offer':
+            isCaller = false;
+            setRole('被呼叫方');
+            await handleOffer(data.sdp);
+            break;
+          case 'answer':
+            await handleAnswer(data.sdp);
+            break;
+          case 'candidate':
+            await handleCandidate(data.candidate);
+            break;
+          case 'leave':
+            closePeerConnection();
+            break;
+        }
+      };
+
+      ws.onclose = () => {
+        setStatus(false, '未连接');
+        setRole('未连接');
+        closePeerConnection();
+      };
+
+      ws.onerror = () => {
+        setStatus(false, '连接出错');
+      };
+    }
+
+    async function startCallAsCaller() {
+      if (!pc) await createPeerConnection();
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
+      sendSignal({ type: 'offer', sdp: offer });
+      callStarted = true;
+    }
+
+    async function handleOffer(offer) {
+      if (!pc) await createPeerConnection();
+      await pc.setRemoteDescription(new RTCSessionDescription(offer));
+      const answer = await pc.createAnswer();
+      await pc.setLocalDescription(answer);
+      sendSignal({ type: 'answer', sdp: answer });
+      callStarted = true;
+    }
+
+    async function handleAnswer(answer) {
+      if (!pc) return;
+      await pc.setRemoteDescription(new RTCSessionDescription(answer));
+    }
+
+    async function handleCandidate(candidate) {
+      if (!pc) return;
+      try {
+        await pc.addIceCandidate(new RTCIceCandidate(candidate));
+      } catch (e) {
+        console.error('添加 ICE Candidate 失败:', e);
+      }
+    }
+
+    // ================= 交互逻辑 =================
+    btnConnect.addEventListener('click', () => {
+      connectSignaling();
+    });
+
+    btnGenerateRoom.addEventListener('click', () => {
+      const id = 'room-' + Math.random().toString(36).slice(2, 8);
+      roomInput.value = id;
+    });
+
+    btnToggleCam.addEventListener('click', async () => {
+      if (!localStream) {
+        await getUserMediaForCall();
+        btnToggleCam.classList.remove('off');
+      }
+      const videoTracks = localStream.getVideoTracks();
+      if (videoTracks.length === 0) return;
+      const track = videoTracks[0];
+      track.enabled = !track.enabled;
+      btnToggleCam.classList.toggle('off', !track.enabled);
+
+      // 关键：当房间已就绪且本端是 caller 时，第一次打开摄像头就发起通话
+      if (peerReady && isCaller && !callStarted) {
+        await startCallAsCaller();
+      }
+    });
+
+    btnToggleMic.addEventListener('click', async () => {
+      if (!localStream) {
+        await getUserMediaForCall();
+      }
+      const audioTracks = localStream.getAudioTracks();
+      if (audioTracks.length === 0) return;
+      const track = audioTracks[0];
+      track.enabled = !track.enabled;
+      btnToggleMic.classList.toggle('off', !track.enabled);
+
+      if (peerReady && isCaller && !callStarted) {
+        await startCallAsCaller();
+      }
+    });
+
+    btnHangup.addEventListener('click', () => {
+      sendSignal({ type: 'leave' });
+      closePeerConnection();
+    });
+
+    btnSwitchCam.addEventListener('click', async () => {
+      if (!localStream) {
+        await getUserMediaForCall();
+        return;
+      }
+      currentCamIndex = (currentCamIndex + 1) % (availableCams.length || 1);
+      // 停止当前视频 track
+      localStream.getVideoTracks().forEach(t => t.stop());
+
+      // 重新获取视频流
+      await enumerateCameras();
+      let videoConstraints = true;
+      if (availableCams.length > 0) {
+        const deviceId = availableCams[currentCamIndex % availableCams.length].deviceId;
+        videoConstraints = { deviceId: { exact: deviceId } };
+      }
+      const newStream = await navigator.mediaDevices.getUserMedia({
+        video: videoConstraints,
+        audio: localStream.getAudioTracks().length > 0
+      });
+
+      // 替换本地流和 video src
+      localStream = newStream;
+      localVideo.srcObject = localStream;
+
+      // 若已经在通话中，则替换 PeerConnection 中的发送 track
+      if (pc) {
+        const senders = pc.getSenders().filter(s => s.track && s.track.kind === 'video');
+        const newVideoTrack = newStream.getVideoTracks()[0];
+        if (newVideoTrack) {
+          if (senders.length > 0) {
+            senders[0].replaceTrack(newVideoTrack);
+          } else {
+            pc.addTrack(newVideoTrack, newStream);
+          }
+        }
+      }
+    });
+
+    // 初始化默认服务器地址
+    // 如果是通过 http://localhost 打开，可以自动推断 ws 地址
+    const inferredWs = (location.protocol.startsWith('http') ? `ws://${location.host}` : 'ws://127.0.0.1:8080');
+    serverInput.value = inferredWs;
+    updateTimer();
+  </script>
+</body>
+</html>
+

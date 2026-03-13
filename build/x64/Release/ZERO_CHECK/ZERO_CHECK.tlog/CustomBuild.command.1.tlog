@@ -1,0 +1,10 @@
+^C:\USERS\29304\DESKTOP\CURSOR\WEBRTC\BUILD\CMAKEFILES\2A9BFE523533A642647E5E8312805A31\GENERATE.STAMP.RULE
+setlocal
+"C:\Program Files\CMake\bin\cmake.exe" -SC:/Users/29304/Desktop/cursor/webrtc -BC:/Users/29304/Desktop/cursor/webrtc/build --check-stamp-list CMakeFiles/generate.stamp.list --vs-solution-file C:/Users/29304/Desktop/cursor/webrtc/build/webrtc_demo.sln
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd

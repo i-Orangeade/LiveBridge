@@ -1,0 +1,25 @@
+{
+  "name": "webrtc",
+  "version": "1.0.0",
+  "description": "LiveBridge is a lightweight real-time communication engine based on WebRTC, providing stable, low-latency audio/video call and data transmission services.",
+  "main": "server.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "node server.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/i-Orangeade/LiveBridge.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/i-Orangeade/LiveBridge/issues"
+  },
+  "homepage": "https://github.com/i-Orangeade/LiveBridge#readme",
+  "dependencies": {
+    "ws": "^8.19.0"
+  }
+}

@@ -1,0 +1,10 @@
+^C:\USERS\29304\DESKTOP\CURSOR\WEBRTC\CLIENT\CMAKELISTS.TXT
+setlocal
+"C:\Program Files\CMake\bin\cmake.exe" -SC:/Users/29304/Desktop/cursor/webrtc -BC:/Users/29304/Desktop/cursor/webrtc/build --check-stamp-file C:/Users/29304/Desktop/cursor/webrtc/build/client/CMakeFiles/generate.stamp
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
