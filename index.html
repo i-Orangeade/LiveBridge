@@ -2,188 +2,517 @@
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8" />
-  <title>WebRTC 1v1 通话演示</title>
+  <title>NovaCall · WebRTC 多人会议（SFU）</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <!-- 内置 Tailwind 风格的实用类（只保留本页面需要的子集，避免外部依赖） -->
   <style>
     :root {
-      color-scheme: dark;
-      --bg-dark: #020617;
-      --bg-card: #020817;
-      --bg-elevated: #020617;
-      --accent: #38bdf8;
-      --accent-soft: rgba(56, 189, 248, 0.15);
-      --accent-strong: #0ea5e9;
+      /* 说明：本 UI 参考“轻量卡片式会议产品”的观感，但所有配色、间距、组件形态与布局均为重新设计，避免任何直接复刻。 */
+      color-scheme: light;
+
+      --bg-root: radial-gradient(1200px 520px at 25% 18%, rgba(99, 102, 241, 0.42), transparent 62%),
+                 radial-gradient(900px 480px at 75% 82%, rgba(168, 85, 247, 0.35), transparent 60%),
+                 linear-gradient(135deg, #eef2ff 0%, #f5f3ff 40%, #eff6ff 100%);
+
+      --panel: rgba(255, 255, 255, 0.78);
+      --panel-strong: rgba(255, 255, 255, 0.92);
+      --panel-border: rgba(15, 23, 42, 0.08);
+
+      --text-main: #0f172a;
+      --text-muted: rgba(15, 23, 42, 0.62);
+
+      --accent: #5b67ff;        /* 主色：靛蓝（自定义） */
+      --accent-2: #a855f7;      /* 辅色：紫 */
+      --accent-soft: rgba(91, 103, 255, 0.16);
+      --accent-strong: #3843ff;
+
       --danger: #ef4444;
-      --danger-soft: rgba(239, 68, 68, 0.15);
-      --success: #22c55e;
-      --success-soft: rgba(34, 197, 94, 0.15);
-      --border-subtle: rgba(148, 163, 184, 0.3);
-      --text-main: #e5e7eb;
-      --text-muted: #9ca3af;
+      --success: #16a34a;
+
+      --shadow-xl: 0 30px 80px rgba(2, 6, 23, 0.18);
+      --shadow-lg: 0 18px 45px rgba(2, 6, 23, 0.14);
+      --shadow-md: 0 10px 25px rgba(2, 6, 23, 0.12);
     }
-    * {
-      box-sizing: border-box;
-    }
+    * { box-sizing: border-box; }
     html, body {
       margin: 0;
       padding: 0;
       height: 100%;
       font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      background: radial-gradient(circle at top, #0f172a, #020617 55%);
+      background: var(--bg-root);
       color: var(--text-main);
+      overflow: hidden;
     }
     body {
       display: flex;
       align-items: stretch;
       justify-content: center;
     }
-    /* 布局容器 */
-    .page-shell {
-      display: flex;
-      flex-direction: column;
+    .bg-orbits {
+      position: fixed;
+      inset: -120px;
+      pointer-events: none;
+      z-index: 0;
+      background:
+        radial-gradient(circle at 18% 20%, rgba(91, 103, 255, 0.22), transparent 60%),
+        radial-gradient(circle at 82% 28%, rgba(168, 85, 247, 0.18), transparent 60%),
+        radial-gradient(circle at 12% 86%, rgba(14, 165, 233, 0.12), transparent 62%);
+      filter: blur(4px);
+    }
+    .app-shell {
+      position: relative;
+      z-index: 1;
       width: 100%;
-      max-width: 1280px;
-      padding: 16px;
-      gap: 12px;
-    }
-    .card {
-      background: radial-gradient(circle at top left, rgba(56, 189, 248, 0.05), rgba(15, 23, 42, 0.98));
-      border-radius: 18px;
-      border: 1px solid rgba(148, 163, 184, 0.3);
-      box-shadow:
-        0 24px 60px rgba(15, 23, 42, 0.7),
-        0 0 0 1px rgba(15, 23, 42, 0.9);
+      max-width: 1320px;
+      padding: 18px;
       display: flex;
       flex-direction: column;
-      padding: 16px 20px 18px;
-      backdrop-filter: blur(16px);
+      gap: 16px;
     }
-    /* 顶部导航栏 */
-    .navbar {
+
+    /* 顶部导航 */
+    .top-bar {
       display: flex;
       align-items: center;
       justify-content: space-between;
       gap: 12px;
+      padding: 10px 14px;
+      border-radius: 16px;
+      background: var(--panel);
+      border: 1px solid var(--panel-border);
+      box-shadow: var(--shadow-md);
+      backdrop-filter: blur(14px);
     }
-    .nav-left {
+    .brand {
       display: flex;
       align-items: center;
       gap: 10px;
     }
-    .logo-circle {
+    .brand-logo {
       width: 32px;
       height: 32px;
       border-radius: 9999px;
-      background: radial-gradient(circle at 30% 30%, #22c55e, #0ea5e9);
-      box-shadow: 0 0 32px rgba(56, 189, 248, 0.6);
+      background:
+        radial-gradient(circle at 30% 25%, rgba(255, 255, 255, 0.95), rgba(255, 255, 255, 0.55)),
+        conic-gradient(from 210deg, var(--accent), var(--accent-2), rgba(14, 165, 233, 0.65), var(--accent));
+      box-shadow:
+        0 18px 40px rgba(91, 103, 255, 0.28),
+        0 0 0 1px rgba(15, 23, 42, 0.06);
       display: flex;
       align-items: center;
       justify-content: center;
-      color: white;
+      color: rgba(15, 23, 42, 0.82);
+      font-weight: 800;
       font-size: 14px;
-      font-weight: 700;
     }
-    .nav-title {
+    .brand-text {
       display: flex;
       flex-direction: column;
-      gap: 2px;
+      gap: 1px;
     }
-    .nav-title-main {
-      font-size: 16px;
+    .brand-title {
+      font-size: 15px;
       font-weight: 600;
-      letter-spacing: 0.04em;
+      letter-spacing: 0.05em;
       text-transform: uppercase;
     }
-    .nav-title-sub {
-      font-size: 12px;
+    .brand-subtitle {
+      font-size: 11px;
       color: var(--text-muted);
     }
-    .status-pill {
+    .status-badge {
       display: inline-flex;
       align-items: center;
       gap: 6px;
       padding: 4px 10px;
       border-radius: 9999px;
-      background: rgba(15, 23, 42, 0.85);
-      border: 1px solid rgba(148, 163, 184, 0.5);
-      font-size: 12px;
+      font-size: 11px;
+      background: rgba(255, 255, 255, 0.75);
+      border: 1px solid var(--panel-border);
+      box-shadow: 0 8px 18px rgba(2, 6, 23, 0.08);
     }
     .status-dot {
       width: 8px;
       height: 8px;
       border-radius: 9999px;
       background: var(--danger);
-      box-shadow: 0 0 8px rgba(239, 68, 68, 0.9);
+      box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.16);
       transition: background 150ms ease, box-shadow 150ms ease;
     }
     .status-dot.connected {
       background: var(--success);
-      box-shadow: 0 0 12px rgba(34, 197, 94, 0.9);
+      box-shadow: 0 0 0 3px rgba(22, 163, 74, 0.18);
     }
-    .status-text {
-      color: var(--text-muted);
-    }
-    /* 主内容区 */
-    .main-layout {
-      display: grid;
-      grid-template-columns: minmax(0, 1.3fr) minmax(260px, 0.7fr);
-      gap: 16px;
-      margin-top: 10px;
-    }
-    @media (max-width: 900px) {
-      .main-layout {
-        grid-template-columns: minmax(0, 1fr);
-      }
-    }
-    .video-area {
-      position: relative;
-      overflow: hidden;
-      border-radius: 18px;
-      background: radial-gradient(circle at top, #0b1120, #020617);
-      border: 1px solid rgba(30, 64, 175, 0.7);
-      box-shadow:
-        0 30px 80px rgba(15, 23, 42, 0.9),
-        0 0 0 1px rgba(30, 64, 175, 0.6);
-      min-height: 320px;
-      display: flex;
-      flex-direction: column;
-      justify-content: space-between;
-    }
-    .video-gradient-overlay {
-      position: absolute;
-      inset: 0;
-      pointer-events: none;
-      background:
-        radial-gradient(circle at top left, rgba(56, 189, 248, 0.16), transparent 55%),
-        radial-gradient(circle at bottom right, rgba(59, 130, 246, 0.2), transparent 55%);
-      mix-blend-mode: screen;
-      opacity: 0.85;
-    }
-    .video-wrapper {
+    .status-text { color: var(--text-muted); }
+
+    /* 页面容器：Join / Call 两个视图 */
+    .page-container {
       position: relative;
       flex: 1;
       display: flex;
-      align-items: center;
-      justify-content: center;
-      padding: 16px;
+      min-height: 0;
+    }
+    .page {
+      position: absolute;
+      inset: 0;
+      display: none;
       z-index: 1;
     }
-    .video-remote {
+    .page--active {
+      display: block;
+      z-index: 2;
+    }
+    .join-page.page--active {
+      display: flex;
+    }
+    .call-page.page--active {
+      display: grid;
+    }
+
+    /* Join Page */
+    .join-page {
+      align-items: center;
+      justify-content: center;
+    }
+    .join-card {
       position: relative;
       width: 100%;
+      max-width: 460px;
+      padding: 26px 26px 24px;
+      border-radius: 20px;
+      background: var(--panel-strong);
+      border: 1px solid var(--panel-border);
+      box-shadow: var(--shadow-xl);
+      backdrop-filter: blur(14px);
+      display: flex;
+      flex-direction: column;
+      gap: 18px;
+    }
+    .join-orbit {
+      position: absolute;
+      width: 220px;
+      height: 220px;
+      border-radius: 9999px;
+      background: radial-gradient(circle at 30% 30%, rgba(91, 103, 255, 0.22), transparent 66%);
+      opacity: 0.9;
+      filter: blur(10px);
+      pointer-events: none;
+      right: -80px;
+      top: -80px;
+    }
+    .join-header {
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      align-items: center;
+    }
+    .join-title-block {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .join-title-main {
+      font-size: 20px;
+      font-weight: 600;
+    }
+    .join-title-sub {
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+    .join-chip {
+      font-size: 11px;
+      padding: 4px 10px;
+      border-radius: 9999px;
+      background: rgba(91, 103, 255, 0.10);
+      border: 1px solid rgba(91, 103, 255, 0.18);
+      color: var(--text-muted);
+    }
+    .join-fields {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .field-row {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .field-label {
+      font-size: 12px;
+      color: var(--text-muted);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .field-label span.hint {
+      font-size: 11px;
+      opacity: 0.8;
+    }
+    .input-shell {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 10px;
+      border-radius: 14px;
+      background: rgba(255, 255, 255, 0.8);
+      border: 1px solid rgba(15, 23, 42, 0.10);
+      box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.35);
+      transition: border-color 120ms ease, box-shadow 120ms ease, background 120ms ease;
+    }
+    .input-shell:focus-within {
+      border-color: rgba(91, 103, 255, 0.55);
+      box-shadow: 0 0 0 4px rgba(91, 103, 255, 0.14);
+      background: rgba(255, 255, 255, 0.92);
+    }
+    .input-icon {
+      width: 16px;
+      height: 16px;
+      color: rgba(91, 103, 255, 0.65);
+      flex-shrink: 0;
+    }
+    .input-field {
+      flex: 1;
+      border: none;
+      outline: none;
+      background: transparent;
+      color: var(--text-main);
+      font-size: 13px;
+    }
+    .input-field::placeholder {
+      color: rgba(148, 163, 184, 0.7);
+    }
+    .join-footer {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-top: 4px;
+    }
+    .join-footer-left {
+      font-size: 11px;
+      color: var(--text-muted);
+    }
+    .btn-primary {
+      padding: 9px 18px;
+      border-radius: 14px;
+      border: 1px solid rgba(91, 103, 255, 0.35);
+      background: linear-gradient(135deg, var(--accent) 0%, var(--accent-2) 100%);
+      color: #ffffff;
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      box-shadow: 0 16px 40px rgba(91, 103, 255, 0.30);
+      transition: transform 120ms ease, box-shadow 120ms ease, background 120ms ease;
+    }
+    .btn-primary:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 18px 48px rgba(91, 103, 255, 0.36);
+    }
+    .btn-primary:active {
+      transform: scale(0.97);
+      box-shadow: 0 12px 32px rgba(34, 211, 238, 0.6);
+    }
+    .pill-ghost {
+      padding: 4px 10px;
+      border-radius: 9999px;
+      border: 1px solid rgba(15, 23, 42, 0.10);
+      background: rgba(255, 255, 255, 0.65);
+      color: rgba(15, 23, 42, 0.72);
+      font-size: 11px;
+      cursor: pointer;
+    }
+    .pill-ghost:hover {
+      background: rgba(255, 255, 255, 0.82);
+      border-color: rgba(91, 103, 255, 0.20);
+    }
+
+    /* 设备设置弹窗（纯 UI，不依赖第三方） */
+    .modal-mask {
+      position: fixed;
+      inset: 0;
+      background: rgba(2, 6, 23, 0.35);
+      backdrop-filter: blur(6px);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 50;
+      padding: 16px;
+    }
+    .modal-mask.show { display: flex; }
+    .modal {
+      width: min(560px, 100%);
+      border-radius: 18px;
+      background: rgba(255, 255, 255, 0.92);
+      border: 1px solid rgba(15, 23, 42, 0.10);
+      box-shadow: var(--shadow-xl);
+      overflow: hidden;
+    }
+    .modal-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 14px 16px;
+      border-bottom: 1px solid rgba(15, 23, 42, 0.08);
+      background: linear-gradient(135deg, rgba(91, 103, 255, 0.10), rgba(168, 85, 247, 0.08));
+    }
+    .modal-title {
+      font-size: 14px;
+      font-weight: 650;
+      color: rgba(15, 23, 42, 0.86);
+    }
+    .icon-btn {
+      border: 1px solid rgba(15, 23, 42, 0.10);
+      background: rgba(255, 255, 255, 0.7);
+      border-radius: 12px;
+      padding: 6px 10px;
+      cursor: pointer;
+      color: rgba(15, 23, 42, 0.72);
+    }
+    .modal-body {
+      padding: 14px 16px 16px;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 14px;
+    }
+    @media (max-width: 720px) {
+      .modal-body { grid-template-columns: 1fr; }
+    }
+    .preview {
+      border-radius: 14px;
+      overflow: hidden;
+      background: radial-gradient(circle at 40% 30%, rgba(15, 23, 42, 0.92), rgba(2, 6, 23, 0.98));
+      border: 1px solid rgba(15, 23, 42, 0.10);
+      aspect-ratio: 16/9;
+      position: relative;
+    }
+    .preview video {
+      width: 100%;
       height: 100%;
+      object-fit: cover;
+      transform: scaleX(-1);
+    }
+    .panel {
+      border-radius: 14px;
+      border: 1px solid rgba(15, 23, 42, 0.08);
+      background: rgba(255, 255, 255, 0.72);
+      padding: 12px;
+    }
+    .panel h4 {
+      margin: 0 0 10px;
+      font-size: 12px;
+      color: rgba(15, 23, 42, 0.70);
+      font-weight: 650;
+    }
+    .row {
+      display: grid;
+      grid-template-columns: 88px 1fr;
+      gap: 10px;
+      align-items: center;
+      margin-bottom: 10px;
+    }
+    .row label {
+      font-size: 12px;
+      color: rgba(15, 23, 42, 0.62);
+    }
+    select, .range {
+      width: 100%;
+      border-radius: 12px;
+      border: 1px solid rgba(15, 23, 42, 0.10);
+      background: rgba(255, 255, 255, 0.85);
+      padding: 8px 10px;
+      outline: none;
+    }
+    .modal-footer {
+      display: flex;
+      gap: 10px;
+      justify-content: flex-end;
+      padding: 12px 16px 16px;
+      border-top: 1px solid rgba(15, 23, 42, 0.08);
+      background: rgba(255, 255, 255, 0.88);
+    }
+    .btn-secondary {
+      padding: 9px 14px;
+      border-radius: 14px;
+      border: 1px solid rgba(15, 23, 42, 0.10);
+      background: rgba(255, 255, 255, 0.65);
+      cursor: pointer;
+      color: rgba(15, 23, 42, 0.78);
+    }
+    .btn-secondary:hover {
+      background: rgba(255, 255, 255, 0.82);
+    }
+
+    /* Call Page 布局 */
+    .call-page {
+      display: grid;
+      grid-template-rows: minmax(0, 1fr) auto;
+      width: 100%;
+    }
+    .call-main {
+      display: grid;
+      grid-template-columns: minmax(0, 1.5fr) minmax(260px, 0.8fr);
+      gap: 16px;
+      min-height: 0;
+    }
+    @media (max-width: 900px) {
+      .call-main {
+        grid-template-columns: minmax(0, 1fr);
+        grid-template-rows: minmax(0, 1.1fr) auto;
+      }
+    }
+
+    .video-panel {
+      position: relative;
+      border-radius: 20px;
+      background: rgba(255, 255, 255, 0.72);
+      border: 1px solid var(--panel-border);
+      box-shadow: var(--shadow-lg);
+      display: flex;
+      flex-direction: column;
+      padding: 14px 14px 10px;
+      min-height: 0;
+    }
+    .video-frame {
+      position: relative;
+      flex: 1;
       border-radius: 16px;
       overflow: hidden;
-      background: radial-gradient(circle at center, #020617, #020617 55%, #020617);
-      border: 1px solid rgba(15, 23, 42, 0.9);
-      box-shadow: inset 0 0 0 1px rgba(15, 23, 42, 0.9);
+      background: radial-gradient(circle at 40% 30%, rgba(15, 23, 42, 0.92), rgba(2, 6, 23, 0.98));
+      box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.06);
+      min-height: 220px;
     }
-    video {
+    .video-frame video {
       width: 100%;
       height: 100%;
       object-fit: cover;
       background: #020617;
+    }
+    .video-overlay {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      background:
+        radial-gradient(circle at 8% 0%, rgba(91, 103, 255, 0.22), transparent 62%),
+        radial-gradient(circle at 100% 100%, rgba(168, 85, 247, 0.16), transparent 68%);
+      opacity: 0.9;
+    }
+    .video-local-thumb {
+      position: absolute;
+      right: 14px;
+      bottom: 14px;
+      width: 220px;
+      max-width: 35%;
+      aspect-ratio: 16 / 9;
+      border-radius: 14px;
+      overflow: hidden;
+      background: rgba(15, 23, 42, 0.95);
+      box-shadow: 0 18px 40px rgba(2, 6, 23, 0.45);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+    }
+    .video-local-thumb video {
+      transform: scaleX(-1);
     }
     .video-placeholder {
       position: absolute;
@@ -194,300 +523,444 @@
       flex-direction: column;
       gap: 8px;
       color: var(--text-muted);
-      font-size: 14px;
+      font-size: 13px;
       backdrop-filter: blur(6px);
     }
     .pulse-ring {
-      width: 40px;
-      height: 40px;
+      width: 44px;
+      height: 44px;
       border-radius: 9999px;
       border: 2px solid rgba(56, 189, 248, 0.5);
       border-top-color: rgba(56, 189, 248, 1);
-      animation: spin 1.2s linear infinite;
+      animation: spin 1.1s linear infinite;
     }
     @keyframes spin {
       to { transform: rotate(360deg); }
     }
-    .mini-local {
-      position: absolute;
-      right: 14px;
-      bottom: 14px;
-      width: 220px;
-      max-width: 38%;
-      aspect-ratio: 16 / 9;
+
+    /* 右侧参与者列表 */
+    .side-panel {
+      border-radius: 20px;
+      background: var(--panel);
+      border: 1px solid var(--panel-border);
+      box-shadow: var(--shadow-lg);
+      padding: 14px 14px 10px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      min-height: 0;
+    }
+    .thumb-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+      overflow: auto;
+      min-height: 0;
+      padding-bottom: 6px;
+    }
+    @media (max-width: 900px) {
+      .thumb-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    }
+    .thumb-card {
+      position: relative;
       border-radius: 14px;
       overflow: hidden;
-      border: 1px solid rgba(148, 163, 184, 0.5);
-      box-shadow:
-        0 18px 40px rgba(15, 23, 42, 0.9),
-        0 0 0 1px rgba(15, 23, 42, 0.9);
-      background: #020617;
-      z-index: 2;
+      border: 1px solid rgba(15, 23, 42, 0.10);
+      background: radial-gradient(circle at 40% 30%, rgba(15, 23, 42, 0.92), rgba(2, 6, 23, 0.98));
+      box-shadow: 0 10px 22px rgba(2, 6, 23, 0.12);
+      aspect-ratio: 16/10;
+      cursor: pointer;
+      user-select: none;
+      transition: transform 120ms ease, box-shadow 120ms ease, outline-color 120ms ease;
     }
-    .mini-local video {
-      transform: scaleX(-1); /* 镜像本地预览，更符合用户直觉 */
+    .thumb-card:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 12px 26px rgba(2, 6, 23, 0.14);
     }
+    .thumb-card.pinned {
+      outline: 3px solid rgba(91, 103, 255, 0.35);
+      outline-offset: 2px;
+    }
+    .thumb-card video {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      background: rgba(2, 6, 23, 1);
+    }
+    .thumb-meta {
+      position: absolute;
+      left: 10px;
+      bottom: 10px;
+      right: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      color: rgba(255, 255, 255, 0.92);
+      font-size: 12px;
+      text-shadow: 0 8px 18px rgba(0,0,0,0.45);
+      pointer-events: none;
+    }
+    .thumb-name {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-weight: 650;
+    }
+    .thumb-badges {
+      display: inline-flex;
+      gap: 6px;
+      align-items: center;
+      flex-shrink: 0;
+    }
+    .badge {
+      padding: 2px 8px;
+      border-radius: 9999px;
+      background: rgba(255, 255, 255, 0.14);
+      border: 1px solid rgba(255, 255, 255, 0.18);
+      font-size: 11px;
+    }
+    .side-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 13px;
+    }
+    .side-header span.subtitle {
+      font-size: 11px;
+      color: var(--text-muted);
+    }
+    .participant-list {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      padding-top: 4px;
+    }
+    .participant-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      padding: 6px 8px;
+      border-radius: 9999px;
+      background: rgba(15, 23, 42, 0.95);
+      border: 1px solid rgba(51, 65, 85, 0.9);
+    }
+    .participant-main {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-width: 0;
+    }
+    .avatar {
+      width: 28px;
+      height: 28px;
+      border-radius: 9999px;
+      background: linear-gradient(145deg, #0f172a, #1e293b);
+      border: 1px solid rgba(148, 163, 184, 0.7);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 13px;
+      font-weight: 600;
+      color: #e5e7eb;
+    }
+    .avatar.local {
+      background: linear-gradient(145deg, #0f172a, #22d3ee);
+    }
+    .participant-name {
+      font-size: 13px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .participant-tag {
+      font-size: 10px;
+      padding: 2px 6px;
+      border-radius: 9999px;
+      background: rgba(15, 23, 42, 0.9);
+      border: 1px solid rgba(55, 65, 81, 1);
+      color: var(--text-muted);
+    }
+    .participant-status {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .status-icon {
+      width: 18px;
+      height: 18px;
+      border-radius: 9999px;
+      border: 1px solid rgba(51, 65, 85, 1);
+      background: rgba(15, 23, 42, 0.95);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--text-muted);
+      font-size: 11px;
+    }
+    .status-icon.on {
+      border-color: rgba(34, 197, 94, 0.9);
+      color: #bbf7d0;
+      background: rgba(22, 163, 74, 0.2);
+    }
+    .status-icon.off {
+      border-color: rgba(239, 68, 68, 0.9);
+      color: #fecaca;
+      background: rgba(127, 29, 29, 0.25);
+    }
+
     /* 底部控制栏 */
-    .controls-bar {
-      position: relative;
+    .call-footer {
+      margin-top: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+    .call-footer-left {
+      font-size: 11px;
+      color: var(--text-muted);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .pill-timer {
+      padding: 3px 8px;
+      border-radius: 9999px;
+      border: 1px solid rgba(91, 103, 255, 0.28);
+      background: rgba(255, 255, 255, 0.82);
+      color: rgba(15, 23, 42, 0.88);
+      font-variant-numeric: tabular-nums;
+      font-size: 11px;
+    }
+    .call-footer-center {
       display: flex;
       align-items: center;
       justify-content: center;
       gap: 12px;
-      padding: 12px 0 4px;
-      z-index: 1;
-    }
-    .control-pill {
-      display: inline-flex;
-      align-items: center;
-      gap: 10px;
-      padding: 6px 12px;
-      border-radius: 9999px;
-      background: rgba(15, 23, 42, 0.9);
-      border: 1px solid rgba(30, 64, 175, 0.8);
-      box-shadow: 0 10px 30px rgba(15, 23, 42, 0.9);
-      font-size: 12px;
-      color: var(--text-muted);
-    }
-    .timer-text {
-      font-variant-numeric: tabular-nums;
-    }
-    .control-buttons {
-      display: flex;
-      align-items: center;
-      gap: 10px;
     }
     .btn-circle {
-      width: 46px;
-      height: 46px;
+      width: 48px;
+      height: 48px;
       border-radius: 9999px;
       display: flex;
       align-items: center;
       justify-content: center;
-      border: 1px solid rgba(148, 163, 184, 0.4);
-      background: radial-gradient(circle at top, rgba(15, 23, 42, 1), rgba(15, 23, 42, 0.98));
+      border: 1px solid rgba(148, 163, 184, 0.5);
+      background: radial-gradient(circle at top, rgba(15, 23, 42, 1), rgba(15, 23, 42, 0.96));
       color: var(--text-main);
       cursor: pointer;
-      transition: transform 120ms ease, box-shadow 120ms ease, background 120ms ease, border-color 120ms ease;
+      position: relative;
+      transition: transform 120ms ease, box-shadow 120ms ease, border-color 120ms ease, background 120ms ease;
+      box-shadow:
+        0 14px 40px rgba(15, 23, 42, 0.95),
+        0 0 0 1px rgba(15, 23, 42, 1);
     }
     .btn-circle:hover {
-      transform: translateY(-1px) scale(1.02);
-      box-shadow: 0 15px 40px rgba(15, 23, 42, 0.9);
-      border-color: rgba(148, 163, 184, 0.9);
+      transform: translateY(-1px) scale(1.03);
+      box-shadow: 0 18px 50px rgba(15, 23, 42, 0.98);
+      border-color: rgba(148, 163, 184, 0.95);
     }
     .btn-circle:active {
-      transform: scale(0.97);
-      box-shadow: 0 6px 20px rgba(15, 23, 42, 0.9);
+      transform: scale(0.96);
+      box-shadow: 0 8px 26px rgba(15, 23, 42, 0.95);
     }
-    .btn-accent {
-      background: radial-gradient(circle at top, var(--accent-strong), #0f172a);
-      border-color: rgba(56, 189, 248, 0.9);
-      box-shadow: 0 18px 45px rgba(56, 189, 248, 0.45);
+    .btn-circle.accent {
+      border-color: rgba(37, 99, 235, 0.9);
+      background: radial-gradient(circle at 0 0, rgba(56, 189, 248, 0.9), #0f172a);
+      box-shadow: 0 18px 54px rgba(56, 189, 248, 0.6);
     }
-    .btn-accent:hover {
-      background: radial-gradient(circle at top, #38bdf8, #0b1120);
+    .btn-circle.danger {
+      border-color: rgba(239, 68, 68, 0.95);
+      background: radial-gradient(circle at 0 0, rgba(248, 113, 113, 1), #111827);
+      box-shadow: 0 20px 60px rgba(248, 113, 113, 0.65);
     }
-    .btn-danger {
-      background: radial-gradient(circle at top, var(--danger), #111827);
-      border-color: rgba(239, 68, 68, 0.9);
-      box-shadow: 0 18px 45px rgba(248, 113, 113, 0.45);
+    .btn-circle.secondary {
+      border-color: rgba(91, 103, 255, 0.28);
+      background: radial-gradient(circle at 0 0, rgba(255, 255, 255, 0.95), rgba(91, 103, 255, 0.22));
+      box-shadow: 0 14px 36px rgba(91, 103, 255, 0.18);
+      color: rgba(15, 23, 42, 0.82);
     }
-    .btn-danger:hover {
-      background: radial-gradient(circle at top, #f97373, #0b1120);
-    }
-    .btn-toggle.off {
-      opacity: 0.6;
-      border-color: rgba(75, 85, 99, 0.9);
+    .btn-circle.toggle-off {
+      opacity: 0.65;
+      border-color: rgba(55, 65, 81, 1);
       box-shadow: none;
     }
-    .btn-toggle.off svg {
-      opacity: 0.7;
-    }
-    .btn-toggle.off::after {
+    .btn-circle.toggle-off::after {
       content: "";
       position: absolute;
       width: 1px;
       height: 26px;
-      background: rgba(239, 68, 68, 0.85);
-      transform: rotate(-35deg);
+      background: rgba(239, 68, 68, 0.95);
+      transform: rotate(-36deg);
       pointer-events: none;
     }
     .btn-icon {
       width: 22px;
       height: 22px;
     }
-    /* 侧边栏 */
-    .sidebar {
-      background: radial-gradient(circle at top right, rgba(56, 189, 248, 0.12), rgba(15, 23, 42, 0.98));
-      border-radius: 18px;
-      border: 1px solid rgba(148, 163, 184, 0.35);
-      padding: 16px 18px 18px;
-      box-shadow:
-        0 20px 50px rgba(15, 23, 42, 0.9),
-        0 0 0 1px rgba(15, 23, 42, 0.9);
-      display: flex;
-      flex-direction: column;
-      gap: 14px;
-    }
-    .sidebar-header {
-      font-size: 14px;
-      font-weight: 600;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-    }
-    .sidebar-header span {
-      color: var(--text-muted);
-      font-size: 12px;
-    }
-    .field-group {
-      display: flex;
-      flex-direction: column;
-      gap: 6px;
-      font-size: 13px;
-    }
-    .field-label {
-      color: var(--text-muted);
-      display: flex;
-      align-items: center;
-      gap: 6px;
-    }
-    .field-label span.key {
-      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
-      font-size: 11px;
-      padding: 1px 6px;
-      border-radius: 9999px;
-      border: 1px solid rgba(55, 65, 81, 1);
-      background: rgba(15, 23, 42, 0.9);
-      color: var(--text-muted);
-    }
-    .input-row {
-      display: flex;
-      gap: 8px;
-    }
-    .input {
-      flex: 1;
-      padding: 8px 10px;
-      border-radius: 9999px;
-      border: 1px solid rgba(51, 65, 85, 0.9);
-      background: rgba(15, 23, 42, 0.9);
-      color: var(--text-main);
-      font-size: 13px;
-      outline: none;
-      transition: border-color 120ms ease, box-shadow 120ms ease, background 120ms ease;
-    }
-    .input:focus {
-      border-color: rgba(56, 189, 248, 0.9);
-      box-shadow: 0 0 0 1px rgba(56, 189, 248, 0.35);
-      background: rgba(15, 23, 42, 0.98);
-    }
-    .btn-primary {
-      padding: 8px 14px;
-      border-radius: 9999px;
-      border: 1px solid rgba(56, 189, 248, 0.9);
-      background: radial-gradient(circle at top, var(--accent-strong), #0f172a);
-      color: white;
-      font-size: 13px;
-      font-weight: 500;
-      cursor: pointer;
-      white-space: nowrap;
-      transition: transform 120ms ease, box-shadow 120ms ease, background 120ms ease;
-      box-shadow: 0 14px 40px rgba(56, 189, 248, 0.5);
-    }
-    .btn-primary:hover {
-      transform: translateY(-1px);
-      box-shadow: 0 18px 50px rgba(56, 189, 248, 0.7);
-      background: radial-gradient(circle at top, #38bdf8, #020617);
-    }
-    .btn-primary:active {
-      transform: scale(0.97);
-      box-shadow: 0 10px 28px rgba(56, 189, 248, 0.6);
-    }
-    .btn-secondary {
-      padding: 6px 10px;
-      border-radius: 9999px;
-      border: 1px solid rgba(55, 65, 81, 1);
-      background: rgba(15, 23, 42, 0.95);
-      color: var(--text-muted);
-      font-size: 11px;
-      cursor: pointer;
-      display: inline-flex;
-      align-items: center;
-      gap: 4px;
-    }
-    .pill-muted {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      padding: 2px 8px;
-      border-radius: 9999px;
-      background: rgba(15, 23, 42, 0.9);
-      border: 1px solid rgba(51, 65, 85, 0.9);
+
+    .call-footer-right {
       font-size: 11px;
       color: var(--text-muted);
+      text-align: right;
     }
-    .text-xs {
-      font-size: 11px;
-      color: var(--text-muted);
+
+    @media (max-width: 768px) {
+      .app-shell { padding: 10px; }
+      .top-bar { padding-inline: 10px; }
+      .brand-subtitle { display: none; }
+      .call-footer {
+        flex-direction: column;
+        align-items: stretch;
+      }
+      .call-footer-left, .call-footer-right {
+        justify-content: space-between;
+      }
     }
-    .mt-1 { margin-top: 4px; }
-    .mt-2 { margin-top: 6px; }
   </style>
 </head>
 <body>
-  <div class="page-shell">
+  <div class="bg-orbits"></div>
+  <div class="app-shell">
     <!-- 顶部导航栏 -->
-    <div class="card navbar">
-      <div class="nav-left">
-        <div class="logo-circle">RT</div>
-        <div class="nav-title">
-          <div class="nav-title-main">Browser WebRTC Call</div>
-          <div class="nav-title-sub">浏览器原生 1 对 1 音视频通话 Demo</div>
+    <header class="top-bar">
+      <div class="brand">
+        <div class="brand-logo">NC</div>
+        <div class="brand-text">
+          <div class="brand-title">NovaCall</div>
+          <div class="brand-subtitle">Browser-native WebRTC · SFU Conference</div>
         </div>
       </div>
-      <div class="status-pill">
-        <span id="statusDot" class="status-dot"></span>
-        <span id="statusText" class="status-text">未连接</span>
+      <div style="display:flex;align-items:center;gap:10px;">
+        <button id="btnBackToJoin" class="pill-ghost" type="button" title="返回加入页面/更换房间">
+          更换房间
+        </button>
+        <button id="btnOpenSettings" class="pill-ghost" type="button" title="设备与媒体设置">
+          设备设置
+        </button>
+        <div class="status-badge">
+          <span id="statusDot" class="status-dot"></span>
+          <span id="statusText" class="status-text">未连接</span>
+        </div>
       </div>
-    </div>
+    </header>
 
-    <!-- 主区域：左侧视频 + 右侧控制面板 -->
-    <div class="main-layout">
-      <!-- 视频区域 -->
-      <div class="video-area">
-        <div class="video-gradient-overlay"></div>
-        <div class="video-wrapper">
-          <div class="video-remote">
-            <video id="remoteVideo" playsinline autoplay></video>
-            <div id="remotePlaceholder" class="video-placeholder">
-              <div class="pulse-ring"></div>
-              <div>等待远端加入房间...</div>
-              <div class="text-xs">请输入相同房间号，在两台浏览器中点击连接</div>
+    <!-- 主页面容器：Join / Call -->
+    <main class="page-container">
+      <!-- Join Page -->
+      <section id="joinPage" class="page join-page page--active">
+        <div class="join-card">
+          <div class="join-orbit"></div>
+          <div class="join-header">
+            <div class="join-title-block">
+              <div class="join-title-main">加入通话房间</div>
+              <div class="join-title-sub">输入房间号，与另一端建立实时连接</div>
+            </div>
+            <div class="join-chip">Step 1 · 准备加入</div>
+          </div>
+
+          <div class="join-fields">
+            <div class="field-row">
+              <label class="field-label">
+                房间号
+                <span class="hint">两端保持一致即可</span>
+              </label>
+              <div class="input-shell">
+                <svg class="input-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+                  <rect x="3" y="3" width="7" height="7" rx="1.5"></rect>
+                  <rect x="14" y="3" width="7" height="7" rx="1.5"></rect>
+                  <rect x="3" y="14" width="7" height="7" rx="1.5"></rect>
+                  <rect x="14" y="14" width="7" height="7" rx="1.5"></rect>
+                </svg>
+                <input id="roomInput" class="input-field" placeholder="例如：nova-room-001" />
+                <button id="btnGenerateRoom" class="pill-ghost" type="button">随机</button>
+              </div>
             </div>
 
-            <div class="mini-local">
-              <video id="localVideo" muted playsinline autoplay></video>
+            <div class="field-row">
+              <label class="field-label">
+                昵称（可选）
+                <span class="hint">在参与者列表中显示</span>
+              </label>
+              <div class="input-shell">
+                <svg class="input-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+                  <circle cx="12" cy="8" r="3.2"></circle>
+                  <path d="M5.5 19.5c.7-3 3.2-5 6.5-5s5.8 2 6.5 5"></path>
+                </svg>
+                <input id="nameInput" class="input-field" placeholder="例如：Alice / Bob" />
+              </div>
+            </div>
+
+            <div class="field-row">
+              <label class="field-label">
+                信令服务器
+                <span class="hint">保持默认即可</span>
+              </label>
+              <div class="input-shell">
+                <svg class="input-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+                  <rect x="3" y="4.5" width="18" height="13" rx="2"></rect>
+                  <path d="M8 19.5v1.5h8v-1.5"></path>
+                </svg>
+                <input id="serverInput" class="input-field" placeholder="wss://livebridge.cn/ws（或本地 ws://127.0.0.1:8080/ws）" />
+              </div>
             </div>
           </div>
+
+          <div class="join-footer">
+            <div class="join-footer-left">
+              建议在两台设备或两个浏览器窗口中使用相同房间号进行测试。
+            </div>
+            <button id="btnConnect" class="btn-primary" type="button">
+              <span>Join Room</span>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M5 12h14"></path>
+                <path d="M13 6l6 6-6 6"></path>
+              </svg>
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <!-- Call Page -->
+      <section id="callPage" class="page call-page">
+        <div class="call-main">
+          <!-- 左侧视频 -->
+          <section class="video-panel">
+            <div class="video-frame">
+              <video id="remoteVideo" playsinline autoplay></video>
+              <div id="remotePlaceholder" class="video-placeholder">
+                <div class="pulse-ring"></div>
+                <div>等待远端加入房间...</div>
+                <div style="font-size:11px;color:var(--text-muted);">两端加入同一房间后，打开摄像头即可建立连接</div>
+              </div>
+              <div class="video-overlay"></div>
+              <div class="video-local-thumb">
+                <video id="localVideo" muted playsinline autoplay></video>
+              </div>
+            </div>
+          </section>
+
+          <!-- 右侧参与者缩略图（最多 16） -->
+          <aside class="side-panel">
+            <div class="side-header">
+              <div>参与者</div>
+              <span class="subtitle">房间：<span id="roomBadge">-</span></span>
+            </div>
+            <div id="thumbGrid" class="thumb-grid" aria-label="参会者缩略图列表"></div>
+          </aside>
         </div>
 
         <!-- 底部控制栏 -->
-        <div class="controls-bar">
-          <div class="control-pill">
+        <footer class="call-footer">
+          <div class="call-footer-left">
             <span>通话时长</span>
-            <span id="callTimer" class="timer-text">00:00</span>
+            <span id="callTimer" class="pill-timer">00:00</span>
           </div>
-          <div class="control-buttons">
-            <button id="btnToggleCam" class="btn-circle btn-toggle" title="切换摄像头开关">
-              <!-- camera icon -->
-              <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M4 7a2 2 0 0 1 2-2h7a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z" />
-                <path d="M16 9l4-3v12l-4-3" />
-              </svg>
-            </button>
-
-            <button id="btnToggleMic" class="btn-circle btn-toggle" title="切换麦克风开关">
-              <!-- mic icon -->
+          <div class="call-footer-center">
+            <button id="btnToggleMic" class="btn-circle accent toggle-off" title="切换麦克风">
               <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M12 3a3 3 0 0 0-3 3v5a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3z" />
                 <path d="M19 10a7 7 0 0 1-14 0" />
@@ -495,18 +968,20 @@
                 <path d="M8 21h8" />
               </svg>
             </button>
-
-            <button id="btnHangup" class="btn-circle btn-danger" title="挂断通话">
-              <!-- phone-x icon -->
+            <button id="btnToggleCam" class="btn-circle accent toggle-off" title="切换摄像头">
+              <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M4 7a2 2 0 0 1 2-2h7a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z" />
+                <path d="M16 9l4-3v12l-4-3" />
+              </svg>
+            </button>
+            <button id="btnHangup" class="btn-circle danger" title="挂断通话">
               <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M4.5 8.5C7 6.5 9.5 5.5 12 5.5s5 1 7.5 3" />
                 <path d="M4.5 8.5L3 11.5l3 2.5" />
                 <path d="M19.5 8.5L21 11.5l-3 2.5" />
               </svg>
             </button>
-
-            <button id="btnSwitchCam" class="btn-circle" title="切换摄像头">
-              <!-- switch-camera icon -->
+            <button id="btnSwitchCam" class="btn-circle secondary" title="切换摄像头">
               <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M5 7h3l2-2h4l2 2h3a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-6a2 2 0 0 1 2-2z" />
                 <path d="M10 12l-2 2-2-2" />
@@ -514,93 +989,55 @@
               </svg>
             </button>
           </div>
-        </div>
-      </div>
-
-      <!-- 侧边栏：房间/服务器配置 -->
-      <aside class="sidebar">
-        <div class="sidebar-header">
-          <div>会话设置</div>
-          <button id="btnGenerateRoom" class="btn-secondary" type="button">
-            生成房间号
-          </button>
-        </div>
-
-        <div class="field-group">
-          <label class="field-label">
-            房间号
-            <span class="key">Room ID</span>
-          </label>
-          <div class="input-row">
-            <input id="roomInput" class="input" placeholder="例如：webrtc-demo-001" />
+          <div class="call-footer-right">
+            NovaCall · WebRTC 多人会议（SFU / mediasoup）
           </div>
-          <div class="text-xs mt-1">两端使用相同房间号，即可进行 1 对 1 通话。</div>
-        </div>
-
-        <div class="field-group">
-          <label class="field-label">
-            信令服务器地址
-            <span class="key">ws://</span>
-          </label>
-          <div class="input-row">
-            <input id="serverInput" class="input" placeholder="ws://127.0.0.1:8080" />
-          </div>
-          <div class="text-xs mt-1">默认使用本机 8080 端口，你可根据实际部署修改。</div>
-        </div>
-
-        <div class="field-group">
-          <label class="field-label">
-            操作
-          </label>
-          <div class="input-row">
-            <button id="btnConnect" class="btn-primary" type="button">
-              连接 &amp; 加入房间
-            </button>
-          </div>
-          <div class="mt-2">
-            <span class="pill-muted" id="peerRole">角色：未连接</span>
-          </div>
-        </div>
-
-        <div class="field-group">
-          <label class="field-label">提示</label>
-          <div class="text-xs">
-            1. 在 <b>两台浏览器</b> 中打开本页面。<br />
-            2. 输入相同房间号和服务器地址。<br />
-            3. 分别点击「连接 &amp; 加入房间」，任一端点击控制栏上的摄像头按钮即可发起通话。<br />
-          </div>
-        </div>
-      </aside>
-    </div>
+        </footer>
+      </section>
+    </main>
   </div>
 
-  <script>
+  <script type="text/plain" data-legacy="p2p">
     // ================= WebRTC + 信令逻辑 =================
-    // 说明：
-    //   - 前端通过 WebSocket 与 Node.js 信令服务器通信；
-    //   - 消息格式为 JSON：{ type: 'join/offer/answer/candidate/leave', ... }；
-    //   - 房间内最多 2 人，简化为 1 对 1 通话场景。
-
     const statusDot = document.getElementById('statusDot');
     const statusText = document.getElementById('statusText');
+
+    const joinPage = document.getElementById('joinPage');
+    const callPage = document.getElementById('callPage');
+
     const roomInput = document.getElementById('roomInput');
+    const nameInput = document.getElementById('nameInput');
     const serverInput = document.getElementById('serverInput');
     const btnConnect = document.getElementById('btnConnect');
     const btnGenerateRoom = document.getElementById('btnGenerateRoom');
+    const btnBackToJoin = document.getElementById('btnBackToJoin');
+
     const btnToggleCam = document.getElementById('btnToggleCam');
     const btnToggleMic = document.getElementById('btnToggleMic');
     const btnHangup = document.getElementById('btnHangup');
     const btnSwitchCam = document.getElementById('btnSwitchCam');
+
     const localVideo = document.getElementById('localVideo');
     const remoteVideo = document.getElementById('remoteVideo');
     const remotePlaceholder = document.getElementById('remotePlaceholder');
     const callTimerEl = document.getElementById('callTimer');
     const peerRoleEl = document.getElementById('peerRole');
 
-    // 基本状态
+    const participantLocalName = document.getElementById('participantLocalName');
+    const participantRemoteName = document.getElementById('participantRemoteName');
+    const participantLocalMic = document.getElementById('participantLocalMic');
+    const participantLocalCam = document.getElementById('participantLocalCam');
+    const participantRemoteMic = document.getElementById('participantRemoteMic');
+    const participantRemoteCam = document.getElementById('participantRemoteCam');
+    const avatarLocal = document.getElementById('avatarLocal');
+    const avatarRemote = document.getElementById('avatarRemote');
+    const roomBadge = document.getElementById('roomBadge');
+
+    // ====== 状态变量 ======
     let ws = null;
     let roomId = '';
     let clientId = null;
+    let username = '';
     let isConnected = false;
     let isCaller = false;
     let peerReady = false;
@@ -614,10 +1051,34 @@
     let currentCamIndex = 0;
     let availableCams = [];
 
+    // Join/连接体验与保活/重连
+    let lastServerUrl = '';
+    let joinInFlight = false;
+    let joinTimeoutId = null;
+    let heartbeatId = null;
+    let reconnectAttempt = 0;
+    let manualLeave = false;
+
+    // ====== ICE 服务器配置（STUN + TURN/TURNS）======
+    // 说明：
+    //   - 仅 STUN 在跨公网/复杂 NAT 下不稳定；
+    //   - 加入 TURN 后，当直连失败时会自动走中继，可靠性显著提升。
     const rtcConfig = {
       iceServers: [
-        { urls: 'stun:stun.l.google.com:19302' }
-      ]
+        { urls: 'stun:stun.l.google.com:19302' },
+        {
+          urls: [
+            'turn:turn.livebridge.cn:3478',
+            'turns:turn.livebridge.cn:5349'
+          ],
+          username: 'webrtc',
+          credential: '19894139321qwe'
+        }
+      ],
+      // 建议保留 all：优先直连，失败再走 TURN；如果你想强制走 TURN，可改为 'relay'
+      iceTransportPolicy: 'all',
+      // 预先收集一些 candidate，加快建联速度（可选）
+      iceCandidatePoolSize: 2
     };
 
     function setStatus(connected, text) {
@@ -626,8 +1087,29 @@
       statusText.textContent = text;
     }
 
+    function setJoinButtonLoading(loading, text) {
+      joinInFlight = loading;
+      btnConnect.disabled = loading;
+      btnConnect.style.opacity = loading ? '0.75' : '1';
+      btnConnect.style.cursor = loading ? 'not-allowed' : 'pointer';
+      btnConnect.querySelector('span').textContent = text || (loading ? 'Connecting…' : 'Join Room');
+    }
+
     function setRole(roleText) {
-      peerRoleEl.textContent = '角色：' + roleText;
+      if (peerRoleEl) {
+        peerRoleEl.textContent = '角色：' + roleText;
+      }
+    }
+
+    function enterCallPage() {
+      joinPage.classList.remove('page--active');
+      callPage.classList.add('page--active');
+      if (roomBadge) roomBadge.textContent = roomId || '-';
+    }
+
+    function enterJoinPage() {
+      callPage.classList.remove('page--active');
+      joinPage.classList.add('page--active');
     }
 
     function updateTimer() {
@@ -658,13 +1140,44 @@
       return Math.random().toString(36).slice(2, 10);
     }
 
+    function setParticipantLocalName(name) {
+      const displayName = name || '你';
+      participantLocalName.textContent = displayName;
+      avatarLocal.textContent = displayName.slice(0, 1) || '你';
+    }
+
+    function setParticipantRemoteName(name) {
+      const displayName = name || '对方';
+      participantRemoteName.textContent = displayName;
+      avatarRemote.textContent = displayName.slice(0, 1) || '对';
+    }
+
+    function setLocalMicState(on) {
+      participantLocalMic.classList.remove('on', 'off');
+      participantLocalMic.classList.add(on ? 'on' : 'off');
+    }
+
+    function setLocalCamState(on) {
+      participantLocalCam.classList.remove('on', 'off');
+      participantLocalCam.classList.add(on ? 'on' : 'off');
+    }
+
+    function setRemoteMicState(on) {
+      participantRemoteMic.classList.remove('on', 'off');
+      participantRemoteMic.classList.add(on ? 'on' : 'off');
+    }
+
+    function setRemoteCamState(on) {
+      participantRemoteCam.classList.remove('on', 'off');
+      participantRemoteCam.classList.add(on ? 'on' : 'off');
+    }
+
     async function enumerateCameras() {
       const devices = await navigator.mediaDevices.enumerateDevices();
       availableCams = devices.filter(d => d.kind === 'videoinput');
     }
 
     async function getUserMediaForCall() {
-      // 如果已经有流，直接返回
       if (localStream) return localStream;
 
       await enumerateCameras();
@@ -675,23 +1188,26 @@
       }
 
       try {
-        // 采集本地音视频
         localStream = await navigator.mediaDevices.getUserMedia({
           video: videoConstraints,
           audio: true
         });
       } catch (e) {
-        // file:// 或权限拒绝时，会走到这里
         console.error('getUserMedia 失败:', e);
-        alert('获取摄像头/麦克风失败。\n\n' +
-              '常见原因：\n' +
-              '1）未授权浏览器摄像头/麦克风权限\n' +
-              '2）页面不是安全上下文（请用 http://localhost 打开，而不是 file:// 双击）\n\n' +
-              '错误信息：' + (e && e.message ? e.message : e));
+        alert(
+          '获取摄像头/麦克风失败。\n\n' +
+          '可能原因：\n' +
+          '1）未授权浏览器使用摄像头/麦克风；\n' +
+          '2）未通过 http://localhost 访问页面；\n\n' +
+          '错误信息：' + (e && e.message ? e.message : e)
+        );
         throw e;
       }
 
       localVideo.srcObject = localStream;
+      setLocalMicState(localStream.getAudioTracks().some(t => t.enabled));
+      setLocalCamState(localStream.getVideoTracks().some(t => t.enabled));
+
       return localStream;
     }
 
@@ -714,6 +1230,9 @@
         }
         remoteStream.addTrack(event.track);
         remotePlaceholder.style.display = 'none';
+
+        const hasVideo = remoteStream.getVideoTracks().length > 0;
+        setRemoteCamState(hasVideo);
       };
 
       pc.onconnectionstatechange = () => {
@@ -727,7 +1246,6 @@
         }
       };
 
-      // 将本地流 track 添加到 PeerConnection
       const stream = await getUserMediaForCall();
       stream.getTracks().forEach(track => pc.addTrack(track, stream));
     }
@@ -744,39 +1262,116 @@
       remoteVideo.srcObject = null;
       remotePlaceholder.style.display = '';
       stopCallTimer();
+      callStarted = false;
+      peerReady = false;
+      setRemoteMicState(false);
+      setRemoteCamState(false);
+    }
+
+    function resetToJoin() {
+      // 断开信令与通话资源，回到 Join 页面
+      manualLeave = true;
+      try { sendSignal({ type: 'leave' }); } catch {}
+      closePeerConnection();
+      if (ws) {
+        try { ws.close(); } catch {}
+      }
+      ws = null;
+      setStatus(false, '未连接');
+      setRole('未连接');
+      enterJoinPage();
+      stopHeartbeat();
+      setJoinButtonLoading(false, 'Join Room');
+    }
+
+    function startHeartbeat() {
+      stopHeartbeat();
+      // 25s 发送一次，规避常见反代 60s 空闲断开
+      heartbeatId = setInterval(() => {
+        if (ws && ws.readyState === WebSocket.OPEN) {
+          try { ws.send(JSON.stringify({ type: 'ping' })); } catch {}
+        }
+      }, 25000);
+    }
+
+    function stopHeartbeat() {
+      if (heartbeatId) clearInterval(heartbeatId);
+      heartbeatId = null;
+    }
+
+    function scheduleReconnect() {
+      if (manualLeave) return;
+      reconnectAttempt += 1;
+      const delay = Math.min(15000, 1000 * Math.pow(2, Math.min(reconnectAttempt, 4))); // 1s/2s/4s/8s/15s
+      setStatus(false, `已断开，${delay / 1000}s 后重连…`);
+      setTimeout(() => {
+        if (manualLeave) return;
+        // 自动重连：保持在通话页，不弹回 Join
+        connectSignaling({ silent: true });
+      }, delay);
     }
 
     function sendSignal(payload) {
       if (!ws || ws.readyState !== WebSocket.OPEN) return;
       const msg = Object.assign({}, payload, {
         roomId,
-        clientId
+        clientId,
+        name: username || undefined
       });
       ws.send(JSON.stringify(msg));
     }
 
     // ================= WebSocket 信令 =================
-    function connectSignaling() {
+    function connectSignaling(opts = {}) {
       if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) {
         return;
       }
 
       const serverUrl = serverInput.value.trim() || 'ws://127.0.0.1:8080';
       roomId = roomInput.value.trim();
+      username = nameInput.value.trim();
+
       if (!roomId) {
         alert('请先输入房间号');
         return;
       }
 
+      manualLeave = false;
       clientId = randomId();
       isCaller = false;
+      peerReady = false;
+      callStarted = false;
+      lastServerUrl = serverUrl;
+      reconnectAttempt = opts.silent ? reconnectAttempt : 0;
+
+      if (!opts.silent) {
+        setJoinButtonLoading(true, 'Connecting…');
+        setStatus(false, '连接中…');
+        // 连接超时提示
+        if (joinTimeoutId) clearTimeout(joinTimeoutId);
+        joinTimeoutId = setTimeout(() => {
+          if (ws && ws.readyState !== WebSocket.OPEN) {
+            setJoinButtonLoading(false, 'Join Room');
+            setStatus(false, '连接超时');
+            alert('连接信令服务器超时，请检查：\n- 服务器地址是否正确\n- 网络/防火墙/反代是否正常');
+            try { ws.close(); } catch {}
+          }
+        }, 8000);
+      }
 
       ws = new WebSocket(serverUrl);
 
       ws.onopen = () => {
         setStatus(true, '已连接信令服务器');
-        setRole('房客（待确定）');
+        setRole('房客（等待匹配）');
+        enterCallPage();
+        setParticipantLocalName(username);
+        setParticipantRemoteName('');
         sendSignal({ type: 'join' });
+        startHeartbeat();
+        setJoinButtonLoading(false, 'Join Room');
+        if (joinTimeoutId) clearTimeout(joinTimeoutId);
+        joinTimeoutId = null;
       };
 
       ws.onmessage = async (event) => {
@@ -786,12 +1381,20 @@
         } catch {
           return;
         }
-        if (data.clientId === clientId) return; // 忽略自己发的
+        if (data.clientId === clientId) return;
+
+        if (data.type === 'pong') {
+          // 心跳响应，无需处理
+          return;
+        }
+
+        if (data.name && !participantRemoteName.textContent) {
+          setParticipantRemoteName(data.name);
+        }
 
         switch (data.type) {
           case 'ready':
             peerReady = true;
-            // 由服务器分配稳定角色，避免双方同时 createOffer
             if (data.role === 'caller') {
               isCaller = true;
               setRole('呼叫方（可发起）');
@@ -818,13 +1421,25 @@
       };
 
       ws.onclose = () => {
-        setStatus(false, '未连接');
-        setRole('未连接');
+        stopHeartbeat();
+        if (manualLeave) {
+          setStatus(false, '未连接');
+          setRole('未连接');
+          closePeerConnection();
+          enterJoinPage();
+          return;
+        }
+        // BUG 修复：不要自动弹回 Join 页；改为留在通话页并自动重连
         closePeerConnection();
+        scheduleReconnect();
       };
 
       ws.onerror = () => {
-        setStatus(false, '连接出错');
+        // 连接中阶段的错误让用户有感知
+        if (!opts.silent) {
+          setStatus(false, '连接出错');
+          setJoinButtonLoading(false, 'Join Room');
+        }
       };
     }
 
@@ -865,23 +1480,23 @@
     });
 
     btnGenerateRoom.addEventListener('click', () => {
-      const id = 'room-' + Math.random().toString(36).slice(2, 8);
+      const id = 'nova-' + Math.random().toString(36).slice(2, 8);
       roomInput.value = id;
     });
 
     btnToggleCam.addEventListener('click', async () => {
       if (!localStream) {
         await getUserMediaForCall();
-        btnToggleCam.classList.remove('off');
+        btnToggleCam.classList.remove('toggle-off');
       }
       const videoTracks = localStream.getVideoTracks();
       if (videoTracks.length === 0) return;
       const track = videoTracks[0];
       track.enabled = !track.enabled;
-      btnToggleCam.classList.toggle('off', !track.enabled);
+      btnToggleCam.classList.toggle('toggle-off', !track.enabled);
+      setLocalCamState(track.enabled);
 
-      // 关键：当房间已就绪且本端是 caller 时，第一次打开摄像头就发起通话
-      if (peerReady && isCaller && !callStarted) {
+      if (peerReady && isCaller && !callStarted && track.enabled) {
         await startCallAsCaller();
       }
     });
@@ -889,14 +1504,16 @@
     btnToggleMic.addEventListener('click', async () => {
       if (!localStream) {
         await getUserMediaForCall();
+        btnToggleMic.classList.remove('toggle-off');
       }
       const audioTracks = localStream.getAudioTracks();
       if (audioTracks.length === 0) return;
       const track = audioTracks[0];
       track.enabled = !track.enabled;
-      btnToggleMic.classList.toggle('off', !track.enabled);
+      btnToggleMic.classList.toggle('toggle-off', !track.enabled);
+      setLocalMicState(track.enabled);
 
-      if (peerReady && isCaller && !callStarted) {
+      if (peerReady && isCaller && !callStarted && track.enabled) {
         await startCallAsCaller();
       }
     });
@@ -906,16 +1523,18 @@
       closePeerConnection();
     });
 
+    btnBackToJoin.addEventListener('click', () => {
+      resetToJoin();
+    });
+
     btnSwitchCam.addEventListener('click', async () => {
       if (!localStream) {
         await getUserMediaForCall();
         return;
       }
       currentCamIndex = (currentCamIndex + 1) % (availableCams.length || 1);
-      // 停止当前视频 track
       localStream.getVideoTracks().forEach(t => t.stop());
 
-      // 重新获取视频流
       await enumerateCameras();
       let videoConstraints = true;
       if (availableCams.length > 0) {
@@ -927,11 +1546,11 @@
         audio: localStream.getAudioTracks().length > 0
       });
 
-      // 替换本地流和 video src
       localStream = newStream;
       localVideo.srcObject = localStream;
+      setLocalCamState(localStream.getVideoTracks().some(t => t.enabled));
+      setLocalMicState(localStream.getAudioTracks().some(t => t.enabled));
 
-      // 若已经在通话中，则替换 PeerConnection 中的发送 track
       if (pc) {
         const senders = pc.getSenders().filter(s => s.track && s.track.kind === 'video');
         const newVideoTrack = newStream.getVideoTracks()[0];
@@ -945,11 +1564,189 @@
       }
     });
 
-    // 初始化默认服务器地址
-    // 如果是通过 http://localhost 打开，可以自动推断 ws 地址
-    const inferredWs = (location.protocol.startsWith('http') ? `ws://${location.host}` : 'ws://127.0.0.1:8080');
-    serverInput.value = inferredWs;
+    // 初始化默认服务器地址：
+    // 你已部署到云端，因此默认指向 wss://livebridge.cn/ws
+    // 如果你要本地跑，也可以改成 ws://127.0.0.1:8080
+    serverInput.value = 'wss://livebridge.cn/ws';
     updateTimer();
+
+    // 兜底：页面初始化时强制进入 Join 页面（避免异常状态直接显示通话页）
+    enterJoinPage();
+
+    // 兜底：捕获运行时错误，避免按钮“无反馈”但实际脚本已崩溃
+    window.addEventListener('error', (e) => {
+      console.error('运行时错误:', e.error || e.message || e);
+      alert('页面脚本发生错误，已在控制台输出详细信息。\\n\\n' +
+            '建议按 F12 打开 Console 查看错误。\\n' +
+            '错误摘要：' + (e.message || 'unknown'));
+    });
+  </script>
+  <script>
+    // SFU 版本配置（注入给 public/app.js 使用）
+    window.__NOVACALL_CONFIG__ = {
+      signalingUrl: 'wss://livebridge.cn/ws',
+      turn: {
+        urls: ['turn:turn.livebridge.cn:3478', 'turns:turn.livebridge.cn:5349'],
+        username: 'webrtc',
+        credential: '19894139321qwe'
+      }
+    };
+  </script>
+  <script src="/app.js"></script>
+  <!-- 设备设置弹窗（仅 UI + 本地预览，不影响 SFU 逻辑） -->
+  <div id="settingsModal" class="modal-mask" aria-hidden="true">
+    <div class="modal" role="dialog" aria-modal="true" aria-label="设备与媒体设置">
+      <div class="modal-header">
+        <div class="modal-title">设备与媒体设置</div>
+        <button id="btnCloseSettings" class="icon-btn" type="button">关闭</button>
+      </div>
+      <div class="modal-body">
+        <div class="preview">
+          <video id="settingsPreviewVideo" playsinline autoplay muted></video>
+        </div>
+        <div class="panel">
+          <h4>设备选择</h4>
+          <div class="row">
+            <label for="selCamera">摄像头</label>
+            <select id="selCamera"></select>
+          </div>
+          <div class="row">
+            <label for="selMic">麦克风</label>
+            <select id="selMic"></select>
+          </div>
+          <div class="row">
+            <label for="selRes">分辨率</label>
+            <select id="selRes">
+              <option value="qvga">320×240（省流）</option>
+              <option value="vga">640×480（推荐）</option>
+              <option value="hd" selected>1280×720（高清）</option>
+            </select>
+          </div>
+          <div class="row">
+            <label for="rngVol">输入音量</label>
+            <input id="rngVol" class="range" type="range" min="0" max="100" value="70" />
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button id="btnResetSettings" class="btn-secondary" type="button">恢复默认</button>
+        <button id="btnSaveSettings" class="btn-primary" type="button">保存</button>
+      </div>
+    </div>
+  </div>
+  <script>
+    // 设备设置弹窗：只做本地预览与选择（不直接侵入 SFU 逻辑）
+    (function () {
+      const modal = document.getElementById('settingsModal');
+      const openBtn = document.getElementById('btnOpenSettings');
+      const closeBtn = document.getElementById('btnCloseSettings');
+      const saveBtn = document.getElementById('btnSaveSettings');
+      const resetBtn = document.getElementById('btnResetSettings');
+
+      const video = document.getElementById('settingsPreviewVideo');
+      const selCamera = document.getElementById('selCamera');
+      const selMic = document.getElementById('selMic');
+      const selRes = document.getElementById('selRes');
+
+      let previewStream = null;
+
+      function show() {
+        modal.classList.add('show');
+        modal.setAttribute('aria-hidden', 'false');
+      }
+      function hide() {
+        modal.classList.remove('show');
+        modal.setAttribute('aria-hidden', 'true');
+      }
+      function stopPreview() {
+        if (!previewStream) return;
+        previewStream.getTracks().forEach(t => t.stop());
+        previewStream = null;
+        if (video) video.srcObject = null;
+      }
+
+      function resToConstraints(v) {
+        if (v === 'qvga') return { width: { ideal: 320 }, height: { ideal: 240 } };
+        if (v === 'vga') return { width: { ideal: 640 }, height: { ideal: 480 } };
+        return { width: { ideal: 1280 }, height: { ideal: 720 } };
+      }
+
+      async function refreshDeviceLists() {
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        const cams = devices.filter(d => d.kind === 'videoinput');
+        const mics = devices.filter(d => d.kind === 'audioinput');
+
+        selCamera.innerHTML = cams.map((d, i) => `<option value="${d.deviceId}">${d.label || `摄像头 ${i + 1}`}</option>`).join('');
+        selMic.innerHTML = mics.map((d, i) => `<option value="${d.deviceId}">${d.label || `麦克风 ${i + 1}`}</option>`).join('');
+      }
+
+      async function startPreview() {
+        stopPreview();
+        const camId = selCamera.value || undefined;
+        const micId = selMic.value || undefined;
+        const res = resToConstraints(selRes.value);
+
+        previewStream = await navigator.mediaDevices.getUserMedia({
+          video: camId ? { deviceId: { exact: camId }, ...res } : { ...res },
+          audio: micId ? { deviceId: { exact: micId } } : true
+        });
+        video.srcObject = previewStream;
+      }
+
+      openBtn?.addEventListener('click', async () => {
+        try {
+          // 先拿一次权限，确保能拿到 label
+          const tmp = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+          tmp.getTracks().forEach(t => t.stop());
+          await refreshDeviceLists();
+          show();
+          await startPreview();
+        } catch (e) {
+          alert('无法打开设备设置：请检查浏览器权限或设备占用。');
+        }
+      });
+
+      closeBtn?.addEventListener('click', () => {
+        stopPreview();
+        hide();
+      });
+
+      modal?.addEventListener('click', (e) => {
+        if (e.target === modal) {
+          stopPreview();
+          hide();
+        }
+      });
+
+      selCamera?.addEventListener('change', startPreview);
+      selMic?.addEventListener('change', startPreview);
+      selRes?.addEventListener('change', startPreview);
+
+      resetBtn?.addEventListener('click', async () => {
+        selRes.value = 'hd';
+        await refreshDeviceLists();
+        await startPreview();
+      });
+
+      saveBtn?.addEventListener('click', () => {
+        // 仅保存到 localStorage，后续我们再把它接入 SFU 的 replaceTrack / 约束更新
+        const pref = {
+          cam: selCamera.value || '',
+          mic: selMic.value || '',
+          res: selRes.value || 'hd'
+        };
+        localStorage.setItem('novacall_device_pref', JSON.stringify(pref));
+        alert('已保存。下次进入会议会优先使用你的选择（后续会接入会议中热切换）。');
+        stopPreview();
+        hide();
+      });
+
+      // 读取历史偏好
+      try {
+        const pref = JSON.parse(localStorage.getItem('novacall_device_pref') || 'null');
+        if (pref?.res) selRes.value = pref.res;
+      } catch {}
+    })();
   </script>
 </body>
 </html>

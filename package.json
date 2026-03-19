@@ -4,8 +4,8 @@
   "description": "LiveBridge is a lightweight real-time communication engine based on WebRTC, providing stable, low-latency audio/video call and data transmission services.",
   "main": "server.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
-    "start": "node server.js"
+    "build": "node build.js",
+    "start": "node build.js && node server.js"
   },
   "repository": {
     "type": "git",
@@ -20,6 +20,9 @@
   },
   "homepage": "https://github.com/i-Orangeade/LiveBridge#readme",
   "dependencies": {
+    "esbuild": "^0.25.1",
+    "mediasoup": "^3.16.0",
+    "mediasoup-client": "^3.16.0",
     "ws": "^8.19.0"
   }
 }
