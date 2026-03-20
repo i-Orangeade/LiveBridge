@@ -1,0 +1,34 @@
+# 自动排除不需要上传的文件
+node_modules/
+.DS_Store
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+build/
+build-classic/
+vcpkg_ports/
+*.local
+.idea/
+.vscode/
+
+
+# IDE 配置
+.vs/
+.vscode/
+.idea/
+
+# 构建产物
+build/
+build-classic/
+
+# 依赖与工具
+node_modules/
+vcpkg_ports/
+client/
+
+# 其他垃圾文件
+.DS_Store
+*.log
+npm-debug.log*
+

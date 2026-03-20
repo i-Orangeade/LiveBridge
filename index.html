@@ -1686,17 +1686,35 @@
         const micId = selMic.value || undefined;
         const res = resToConstraints(selRes.value);
 
-        previewStream = await navigator.mediaDevices.getUserMedia({
-          video: camId ? { deviceId: { exact: camId }, ...res } : { ...res },
-          audio: micId ? { deviceId: { exact: micId } } : true
-        });
-        video.srcObject = previewStream;
+        try {
+          previewStream = await navigator.mediaDevices.getUserMedia({
+            video: camId ? { deviceId: { exact: camId }, ...res } : { ...res },
+            audio: micId ? { deviceId: { exact: micId } } : true
+          });
+        } catch (e) {
+          console.warn('Failed to get both video and audio in settings, trying audio only', e);
+          try {
+            previewStream = await navigator.mediaDevices.getUserMedia({
+              video: false,
+              audio: micId ? { deviceId: { exact: micId } } : true
+            });
+          } catch (e2) {
+             console.error('Failed to get any media', e2);
+             return;
+          }
+        }
+        if (video) video.srcObject = previewStream;
       }
 
       openBtn?.addEventListener('click', async () => {
         try {
           // 先拿一次权限，确保能拿到 label
-          const tmp = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+          let tmp;
+          try {
+            tmp = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+          } catch (e) {
+            tmp = await navigator.mediaDevices.getUserMedia({ video: false, audio: true });
+          }
           tmp.getTracks().forEach(t => t.stop());
           await refreshDeviceLists();
           show();

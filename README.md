@@ -1,92 +1,145 @@
-🚀 LiveBridge
+<div align="center">
 
-🔥 基于 WebRTC + SFU（mediasoup） 的浏览器原生多人会议 / 直播系统
-支持低延迟多人互动、跨设备实时连接
+# 🚀 LiveBridge
 
-✨ 功能特性
+**轻量、稳定的 WebRTC + SFU 浏览器原生多人实时音视频通讯引擎**
 
-✅ 纯浏览器运行：无需安装客户端，打开网页即可加入会议
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
+[![Node.js](https://img.shields.io/badge/Node.js-%E2%89%A518.0.0-green.svg)](https://nodejs.org/)
+[![mediasoup](https://img.shields.io/badge/mediasoup-SFU-orange.svg)](https://mediasoup.org/)
+[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](#-贡献指南)
 
-✅ SFU 架构：支持多人直播 / 会议，带宽占用远低于 P2P
+</div>
 
-✅ 自适应码率：根据网络状况自动调整视频质量
+---
 
-✅ 房间管理：随机生成房间号，快速邀请他人加入
+## 📖 项目简介
 
-✅ 设备控制：麦克风 / 摄像头开关、设备选择
+**LiveBridge** 是一个基于 `WebRTC` 和 `mediasoup (SFU)` 构建的轻量级多人视频会议与直播系统。无需安装任何客户端，打开现代浏览器即可体验低延迟、高并发的实时音视频互动。它专为**云端部署**和**本地开发**双重场景设计，开箱即用。
 
-✅ 安全传输：HTTPS + WSS，兼容现代浏览器
+---
 
-📦 项目结构
+## ✨ 核心特性
+
+- 🌐 **纯浏览器原生**：无需额外插件或客户端，支持现代主流浏览器（Chrome/Edge/Firefox/Safari）。
+- 🚀 **高性能 SFU 架构**：基于强大的 `mediasoup`，服务器仅负责流的路由与转发，相比 P2P 架构，大幅降低了多端互联时的客户端上行带宽和 CPU 压力。
+- 👥 **多人无缝互联**：默认支持最多 **16 人** 的同房间音视频互动。
+- 🎥 **智能设备与状态管理**：
+  - 支持动态切换摄像头与麦克风。
+  - 自动检测设备状态，即使无摄像头也能使用**纯音频降级模式**。
+  - 支持多分辨率选择与输入音量调节。
+- ⚡ **稳健的连接策略**：
+  - 内置 STUN/TURN 中继支持，轻松穿透复杂 NAT 和防火墙。
+  - 完善的心跳保活与断线重连机制。
+- 📦 **零配置打包**：内置 `esbuild`，自动打包前端资源，无外部 CDN 强依赖。
+
+---
+
+## 📦 项目结构
+
+```text
 LiveBridge/
-├── public/          # 前端静态资源（app.js、样式等）
-├── src/             # 核心业务代码
-├── index.html       # 主页面
-├── server.js        # SFU 信令 / 媒体服务器（Node.js）
-├── package.json     # 依赖管理
-├── build.js         # 构建脚本
-└── README.md        # 项目说明
-🚀 快速开始（本地运行）
-1️⃣ 环境要求
+├── public/          # 自动生成的静态资源目录 (app.js)
+├── src/             # 前端核心业务源码
+│   └── app.js       # WebRTC 客户端及 UI 交互逻辑
+├── index.html       # 主入口页面 (包含现代化拟态风格 UI)
+├── server.js        # Node.js SFU 媒体服务器 + WebSocket 信令 + 静态文件服务
+├── build.js         # 前端构建脚本 (esbuild)
+└── package.json     # 项目依赖配置
+```
 
-Node.js ≥ 18.0.0
+---
 
-npm ≥ 8.0.0
+## 🚀 快速开始（本地开发）
 
-现代浏览器（Chrome ≥ 88 / Edge ≥ 88 / Firefox ≥ 78）
+### 1. 环境准备
 
-2️⃣ 克隆项目
+- **Node.js**: `≥ 18.0.0`
+- **npm**: `≥ 8.0.0`
+- **浏览器**: Chrome `≥ 88` / Edge `≥ 88` / Firefox `≥ 78`
+
+### 2. 克隆与安装
+
+```bash
+# 克隆代码仓库
 git clone https://github.com/i-Orangeade/LiveBridge.git
 cd LiveBridge
-3️⃣ 安装依赖
+
+# 安装依赖
 npm install
-4️⃣ 启动 SFU 服务器
-node server.js
-5️⃣ 访问页面
+```
 
-本地开发：http://localhost:8080
+### 3. 启动服务
 
-生产环境：使用 Nginx + HTTPS（见下方部署）
+```bash
+# 启动构建和服务器
+npm start
+```
+*启动成功后，控制台会输出如下信息：*
+```text
+[build] public/app.js generated
+HTTP : http://localhost:8080
+WS   : ws://localhost:8080/ws
+[mediasoup] announcedIp=49.233.175.236 rtcPortRange=49160-49200
+```
 
-☁️ 云服务器部署教程（Ubuntu 20.04+）
-1️⃣ 准备服务器
+### 4. 访问测试
+> ⚠️ **注意**：为了正常获取麦克风和摄像头权限，请必须通过 `http://localhost:8080` 访问，**不要**直接双击 `index.html` 打开。
 
-Ubuntu 20.04 / 22.04
+1. 在浏览器中打开 `http://localhost:8080`。
+2. 输入房间号（如：`test-room`）和昵称。
+3. 点击 **"Join Room"** 加入。
+4. 在另一台设备或新的浏览器标签页中，输入**相同的房间号**即可进行视频通话！
 
-推荐配置：2 核 4G 以上
+---
 
-已绑定域名（如：livebridge.cn）
+## ☁️ 云服务器部署指南 (生产环境)
 
-开放端口：
+推荐在 **Ubuntu 20.04/22.04** 上进行部署。
 
-80/tcp
+### 1. 服务器准备
+- 推荐配置：2核 4G 或以上。
+- 准备一个已解析的域名（例如 `livebridge.cn`）。
+- **放行防火墙/安全组端口**：
+  - `80/tcp`, `443/tcp` (Web 服务与信令)
+  - `49160-49200/udp` (WebRTC 媒体流通信，根据 `server.js` 的配置放行)
 
-443/tcp
+### 2. 环境安装
 
-30000-40000/udp（WebRTC 媒体流）
-
-2️⃣ 安装依赖
+```bash
+# 更新系统并安装必要组件
 apt update && apt upgrade -y
+apt install curl nginx -y
+apt install certbot python3-certbot-nginx -y
 
+# 安装 Node.js 18.x
 curl -fsSL https://deb.nodesource.com/setup_18.x | bash -
 apt install nodejs -y
+```
 
-apt install nginx -y
-apt install certbot python3-certbot-nginx -y
-3️⃣ 克隆项目
+### 3. 部署代码
+
+```bash
 cd /var/www
 git clone https://github.com/i-Orangeade/LiveBridge.git
 cd LiveBridge
 
+# 安装依赖并构建
 npm install
-4️⃣ 配置 Nginx 反向代理
+npm run build
+```
 
-创建文件：
+### 4. 申请 SSL 证书
+WebRTC 在公网环境下**必须**使用 HTTPS，否则浏览器会拒绝摄像头权限。
+```bash
+certbot --nginx -d livebridge.cn
+```
 
-/etc/nginx/sites-available/livebridge.conf
+### 5. Nginx 反向代理配置
 
-内容如下：
+创建 Nginx 配置文件 `/etc/nginx/sites-available/livebridge.conf`：
 
+```nginx
 server {
     listen 80;
     server_name livebridge.cn;
@@ -113,6 +166,7 @@ server {
         add_header Cache-Control "no-cache";
     }
 
+    # 代理 WebSocket 信令
     location /ws {
         proxy_pass http://127.0.0.1:8080;
         proxy_http_version 1.1;
@@ -123,74 +177,60 @@ server {
         proxy_send_timeout 3600;
     }
 }
+```
 
-启用配置：
-
+启用配置并重启 Nginx：
+```bash
 ln -s /etc/nginx/sites-available/livebridge.conf /etc/nginx/sites-enabled/
 nginx -t && systemctl reload nginx
-5️⃣ 申请 SSL 证书
-certbot --nginx -d livebridge.cn
-6️⃣ 使用 PM2 后台运行
-npm install -g pm2
+```
 
+### 6. 使用 PM2 守护进程
+
+```bash
+npm install -g pm2
 pm2 start server.js --name livebridge
 pm2 startup
 pm2 save
-📖 使用说明
+```
 
-🎯 创建房间：访问网站自动生成房间号
+---
 
-👥 加入房间：输入相同房间号 + 昵称
+## 💡 常见问题与排错
 
-🎙 设备控制：开关麦克风 / 摄像头、切换设备
+**Q1: 浏览器提示无法访问摄像头/麦克风？**
+> 确保你是通过 `localhost` 或者 `HTTPS` 访问页面。多数浏览器处于安全考虑，禁止在 `http://IP` 或是 `file://` 环境下获取媒体设备。
 
-📡 多人互动：所有用户共享同一房间流
+**Q2: 成功连接但看不到对方画面？**
+> 1. 确认双方输入了**完全一致**的房间号（区分大小写）。
+> 2. 检查云端部署时，是否已经在云服务商的控制台放行了 `UDP 49160-49200` 端口。
+> 3. 按 `F12` 打开浏览器控制台查看是否有报错。
 
-🛠️ 技术栈
+**Q3: 跨局域网或不同运营商连接不稳定？**
+> 本项目已在前端代码 (`src/app.js`) 默认集成了 STUN/TURN 服务器。如果仍有问题，请检查你的 TURN 服务是否正常运行。
 
-前端：原生 JavaScript + WebRTC API + mediasoup-client
+---
 
-后端：Node.js + mediasoup（SFU）+ WebSocket
+## 🛠️ 技术栈详情
 
-部署：Nginx + SSL + PM2
+- **前端**: 原生 JavaScript, HTML5, CSS3, `mediasoup-client`, `esbuild`
+- **后端**: Node.js, `mediasoup` (SFU 核心), `ws` (WebSocket)
+- **协议栈**: WebRTC, DTLS, SRTP, HTTPS, WSS
 
-协议：HTTPS + WSS + WebRTC（UDP/TCP）
+---
 
-🤝 贡献指南
+## 🤝 贡献指南
 
-欢迎提交 Issue 和 Pull Request！
+我们非常欢迎任何形式的贡献，包括 Bug 修复、新功能特性、文档完善等！
 
-# 1. Fork 仓库
-# 2. 创建分支
-git checkout -b feature/AmazingFeature
+1. Fork 本仓库
+2. 创建您的特性分支 (`git checkout -b feature/AmazingFeature`)
+3. 提交您的修改 (`git commit -m 'Add some AmazingFeature'`)
+4. 推送到分支 (`git push origin feature/AmazingFeature`)
+5. 在 GitHub 上开启一个 Pull Request 🎉
 
-# 3. 提交代码
-git commit -m "Add some AmazingFeature"
+---
 
-# 4. 推送分支
-git push origin feature/AmazingFeature
+## 📄 许可证
 
-然后在 GitHub 上发起 Pull Request 🎉
-
-📄 许可证
-
-本项目基于 MIT License 开源
-
-💡 常见问题
-❌ 连接失败 / 显示已断开
-
-检查 pm2 status
-
-检查 nginx -t
-
-浏览器 F12 → Network → WS
-
-📉 视频卡顿 / 延迟高
-
-检查服务器带宽
-
-确认 UDP 30000-40000 端口已开放
-
-⚠️ 浏览器安全警告
-
-必须使用 HTTPS 访问
+本项目基于 [MIT License](https://opensource.org/licenses/MIT) 协议开源。

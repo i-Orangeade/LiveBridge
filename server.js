@@ -33,8 +33,10 @@ const MAX_PEERS_PER_ROOM = Number(process.env.MAX_PEERS_PER_ROOM || 16);
 // RoomState: { router, peers: Map<peerId, PeerState> }
 // PeerState: { ws, transports: Map<transportId, transport>, producers: Map<producerId, producer>, consumers: Map<consumerId, consumer> }
 const rooms = new Map();
+const roomPromises = new Map();
 
 let workerPromise = null;
+// ... (rest of getWorker)
 async function getWorker() {
   if (workerPromise) return workerPromise;
   workerPromise = (async () => {
@@ -53,32 +55,38 @@ async function getWorker() {
 }
 
 async function getOrCreateRoom(roomId) {
-  const existing = rooms.get(roomId);
-  if (existing) return existing;
+  if (rooms.has(roomId)) return rooms.get(roomId);
+  if (roomPromises.has(roomId)) return roomPromises.get(roomId);
 
-  const worker = await getWorker();
-  const router = await worker.createRouter({
-    mediaCodecs: [
-      // Opus
-      {
-        kind: 'audio',
-        mimeType: 'audio/opus',
-        clockRate: 48000,
-        channels: 2
-      },
-      // VP8（兼容最好）
-      {
-        kind: 'video',
-        mimeType: 'video/VP8',
-        clockRate: 90000,
-        parameters: {}
-      }
-    ]
-  });
+  const promise = (async () => {
+    const worker = await getWorker();
+    const router = await worker.createRouter({
+      mediaCodecs: [
+        // Opus
+        {
+          kind: 'audio',
+          mimeType: 'audio/opus',
+          clockRate: 48000,
+          channels: 2
+        },
+        // VP8（兼容最好）
+        {
+          kind: 'video',
+          mimeType: 'video/VP8',
+          clockRate: 90000,
+          parameters: {}
+        }
+      ]
+    });
 
-  const room = { router, peers: new Map() };
-  rooms.set(roomId, room);
-  return room;
+    const room = { router, peers: new Map() };
+    rooms.set(roomId, room);
+    roomPromises.delete(roomId);
+    return room;
+  })();
+  
+  roomPromises.set(roomId, promise);
+  return promise;
 }
 
 function ensurePeer(room, peerId, ws) {
@@ -184,6 +192,18 @@ wss.on('connection', (ws) => {
             return;
           }
 
+          if (room.peers.has(peerId)) {
+            // Clean up old peer resources
+            const oldPeer = room.peers.get(peerId);
+            for (const [, c] of oldPeer.consumers) { try { c.close(); } catch {} }
+            for (const [, p] of oldPeer.producers) {
+              try { p.close(); } catch {}
+              broadcastExcept(room, peerId, { type: 'producerClosed', data: { producerId: p.id } });
+            }
+            for (const [, t] of oldPeer.transports) { try { t.close(); } catch {} }
+            room.peers.delete(peerId);
+          }
+
           ensurePeer(room, peerId, ws);
           safeSend(ws, { type: 'routerRtpCapabilities', data: room.router.rtpCapabilities });
           break;
@@ -287,6 +307,11 @@ wss.on('connection', (ws) => {
             || Array.from(peer.transports.values())[1]
             || Array.from(peer.transports.values())[0];
 
+          if (!recvTransport) {
+            safeSend(ws, { type: 'consumeError', data: { producerId: msg.producerId, error: 'No recv transport' } });
+            return;
+          }
+
           const consumer = await recvTransport.consume({
             producerId: msg.producerId,
             rtpCapabilities: msg.rtpCapabilities,
@@ -355,6 +380,7 @@ wss.on('connection', (ws) => {
 
     room.peers.delete(peerId);
     if (room.peers.size === 0) {
+      try { room.router.close(); } catch {}
       rooms.delete(roomId);
     }
   });

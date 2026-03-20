@@ -210,75 +210,81 @@ function updatePinnedUI() {
 
 async function ensureLocalStream() {
   if (localStream) return localStream;
-  localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-  localVideo.srcObject = localStream;
+  try {
+    localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+  } catch (e) {
+    console.warn('Failed to get both video and audio, trying audio only', e);
+    localStream = await navigator.mediaDevices.getUserMedia({ video: false, audio: true });
+  }
+  
+  if (localVideo) {
+    localVideo.srcObject = localStream;
+  }
 
   // 同步 UI：开启摄像头/麦克风后移除红斜线（toggle-off）
   const v = localStream.getVideoTracks()[0];
   const a = localStream.getAudioTracks()[0];
-  btnToggleCam?.classList.toggle('toggle-off', !(v?.enabled ?? true));
-  btnToggleMic?.classList.toggle('toggle-off', !(a?.enabled ?? true));
+  btnToggleCam?.classList.toggle('toggle-off', !(v?.enabled ?? false));
+  btnToggleMic?.classList.toggle('toggle-off', !(a?.enabled ?? false));
 
   return localStream;
 }
 
-async function connectSignaling() {
-  roomId = roomInput.value.trim();
-  username = nameInput.value.trim();
-  const url = (serverInput.value.trim() || CONFIG.signalingUrl);
+function connectSignaling() {
+  return new Promise((resolve, reject) => {
+    roomId = roomInput.value.trim();
+    username = nameInput.value.trim();
+    const url = (serverInput.value.trim() || CONFIG.signalingUrl);
 
-  if (!roomId) {
-    alert('请先输入房间号');
-    return;
-  }
-
-  setStatus(false, '连接中…');
-  btnConnect.disabled = true;
-
-  ws = new WebSocket(url);
-
-  ws.onopen = () => {
-    setStatus(true, '已连接');
-    enterCallPage(roomId);
-    wsSend({ type: 'join', roomId, peerId, name: username });
-  };
-
-  ws.onclose = () => {
-    setStatus(false, '已断开');
-    btnConnect.disabled = false;
-  };
-
-  ws.onerror = () => {
-    setStatus(false, '连接出错');
-    btnConnect.disabled = false;
-  };
-
-  ws.onmessage = async (evt) => {
-    const msg = JSON.parse(evt.data);
-    switch (msg.type) {
-      case 'routerRtpCapabilities':
-        await loadDevice(msg.data);
-        await createTransports();
-        break;
-      case 'createTransport':
-        // 服务器不会主动发这个；保留
-        break;
-      case 'connectTransport':
-        // 服务器不会主动发这个；保留
-        break;
-      case 'newProducers':
-        // 订阅新 producer
-        for (const p of msg.data) {
-          await consume(p.producerId, p.peerId);
-        }
-        break;
-      case 'producerClosed':
-        closeConsumer(msg.data.producerId);
-        break;
-      default:
-        break;
+    if (!roomId) {
+      alert('请先输入房间号');
+      return reject(new Error('no room'));
     }
-  };
+
+    setStatus(false, '连接中…');
+    btnConnect.disabled = true;
+
+    ws = new WebSocket(url);
+
+    ws.onopen = () => {
+      setStatus(true, '已连接');
+      enterCallPage(roomId);
+      wsSend({ type: 'join', roomId, peerId, name: username });
+      resolve();
+    };
+
+    ws.onclose = () => {
+      setStatus(false, '已断开');
+      btnConnect.disabled = false;
+    };
+
+    ws.onerror = (e) => {
+      setStatus(false, '连接出错');
+      btnConnect.disabled = false;
+      reject(e);
+    };
+
+    ws.onmessage = async (evt) => {
+      const msg = JSON.parse(evt.data);
+      switch (msg.type) {
+        case 'newProducers':
+          // 订阅新 producer
+          for (const p of msg.data) {
+            await consume(p.producerId, p.peerId);
+          }
+          break;
+        case 'producerClosed':
+          closeConsumer(msg.data.producerId);
+          break;
+        case 'full':
+          alert('房间已满');
+          teardown();
+          break;
+        default:
+          break;
+      }
+    };
+  });
 }
 
 async function loadDevice(routerRtpCapabilities) {
@@ -286,16 +292,11 @@ async function loadDevice(routerRtpCapabilities) {
   await device.load({ routerRtpCapabilities });
 }
 
-async function createTransports() {
-  // 创建发送 Transport
-  wsSend({ type: 'createWebRtcTransport', direction: 'send', roomId, peerId });
-}
-
-function waitOnce(type) {
+function waitOnce(type, predicate = () => true) {
   return new Promise((resolve) => {
     const handler = (evt) => {
       const msg = JSON.parse(evt.data);
-      if (msg.type === type) {
+      if (msg.type === type && predicate(msg.data)) {
         ws.removeEventListener('message', handler);
         resolve(msg.data);
       }
@@ -309,24 +310,20 @@ async function setupSendTransport(data) {
 
   sendTransport.on('connect', ({ dtlsParameters }, cb, eb) => {
     wsSend({ type: 'connectWebRtcTransport', roomId, peerId, transportId: sendTransport.id, dtlsParameters });
-    cb();
+    waitOnce('transportConnected', d => d.transportId === sendTransport.id).then(() => cb()).catch(eb);
   });
 
   sendTransport.on('produce', ({ kind, rtpParameters }, cb, eb) => {
     wsSend({ type: 'produce', roomId, peerId, transportId: sendTransport.id, kind, rtpParameters });
-    // 服务器会回 producerId
     waitOnce('produced').then(({ producerId }) => cb({ id: producerId })).catch(eb);
   });
-
-  // 创建接收 Transport
-  wsSend({ type: 'createWebRtcTransport', direction: 'recv', roomId, peerId });
 }
 
 async function setupRecvTransport(data) {
   recvTransport = device.createRecvTransport(data);
   recvTransport.on('connect', ({ dtlsParameters }, cb, eb) => {
     wsSend({ type: 'connectWebRtcTransport', roomId, peerId, transportId: recvTransport.id, dtlsParameters });
-    cb();
+    waitOnce('transportConnected', d => d.transportId === recvTransport.id).then(() => cb()).catch(eb);
   });
 }
 
@@ -477,7 +474,11 @@ btnGenerateRoom?.addEventListener('click', () => {
 });
 
 btnConnect?.addEventListener('click', async () => {
-  await connectSignaling();
+  try {
+    await connectSignaling();
+  } catch (e) {
+    return;
+  }
 
   // 服务器在 join 后会下发 routerRtpCapabilities，然后我们再创建 transports
   const rtpCaps = await waitOnce('routerRtpCapabilities');
@@ -489,6 +490,7 @@ btnConnect?.addEventListener('click', async () => {
   await setupSendTransport(sendData);
 
   // recv transport
+  wsSend({ type: 'createWebRtcTransport', direction: 'recv', roomId, peerId });
   const recvData = await waitOnce('webRtcTransportCreated');
   await setupRecvTransport(recvData);
 

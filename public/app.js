@@ -11967,74 +11967,78 @@
       }
       async function ensureLocalStream() {
         if (localStream) return localStream;
-        localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-        localVideo.srcObject = localStream;
+        try {
+          localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+        } catch (e) {
+          console.warn("Failed to get both video and audio, trying audio only", e);
+          localStream = await navigator.mediaDevices.getUserMedia({ video: false, audio: true });
+        }
+        if (localVideo) {
+          localVideo.srcObject = localStream;
+        }
         const v = localStream.getVideoTracks()[0];
         const a = localStream.getAudioTracks()[0];
-        btnToggleCam?.classList.toggle("toggle-off", !(v?.enabled ?? true));
-        btnToggleMic?.classList.toggle("toggle-off", !(a?.enabled ?? true));
+        btnToggleCam?.classList.toggle("toggle-off", !(v?.enabled ?? false));
+        btnToggleMic?.classList.toggle("toggle-off", !(a?.enabled ?? false));
         return localStream;
       }
-      async function connectSignaling() {
-        roomId = roomInput.value.trim();
-        username = nameInput.value.trim();
-        const url = serverInput.value.trim() || CONFIG.signalingUrl;
-        if (!roomId) {
-          alert("\u8BF7\u5148\u8F93\u5165\u623F\u95F4\u53F7");
-          return;
-        }
-        setStatus(false, "\u8FDE\u63A5\u4E2D\u2026");
-        btnConnect.disabled = true;
-        ws = new WebSocket(url);
-        ws.onopen = () => {
-          setStatus(true, "\u5DF2\u8FDE\u63A5");
-          enterCallPage(roomId);
-          wsSend({ type: "join", roomId, peerId, name: username });
-        };
-        ws.onclose = () => {
-          setStatus(false, "\u5DF2\u65AD\u5F00");
-          btnConnect.disabled = false;
-        };
-        ws.onerror = () => {
-          setStatus(false, "\u8FDE\u63A5\u51FA\u9519");
-          btnConnect.disabled = false;
-        };
-        ws.onmessage = async (evt) => {
-          const msg = JSON.parse(evt.data);
-          switch (msg.type) {
-            case "routerRtpCapabilities":
-              await loadDevice(msg.data);
-              await createTransports();
-              break;
-            case "createTransport":
-              break;
-            case "connectTransport":
-              break;
-            case "newProducers":
-              for (const p of msg.data) {
-                await consume(p.producerId, p.peerId);
-              }
-              break;
-            case "producerClosed":
-              closeConsumer(msg.data.producerId);
-              break;
-            default:
-              break;
+      function connectSignaling() {
+        return new Promise((resolve, reject) => {
+          roomId = roomInput.value.trim();
+          username = nameInput.value.trim();
+          const url = serverInput.value.trim() || CONFIG.signalingUrl;
+          if (!roomId) {
+            alert("\u8BF7\u5148\u8F93\u5165\u623F\u95F4\u53F7");
+            return reject(new Error("no room"));
           }
-        };
+          setStatus(false, "\u8FDE\u63A5\u4E2D\u2026");
+          btnConnect.disabled = true;
+          ws = new WebSocket(url);
+          ws.onopen = () => {
+            setStatus(true, "\u5DF2\u8FDE\u63A5");
+            enterCallPage(roomId);
+            wsSend({ type: "join", roomId, peerId, name: username });
+            resolve();
+          };
+          ws.onclose = () => {
+            setStatus(false, "\u5DF2\u65AD\u5F00");
+            btnConnect.disabled = false;
+          };
+          ws.onerror = (e) => {
+            setStatus(false, "\u8FDE\u63A5\u51FA\u9519");
+            btnConnect.disabled = false;
+            reject(e);
+          };
+          ws.onmessage = async (evt) => {
+            const msg = JSON.parse(evt.data);
+            switch (msg.type) {
+              case "newProducers":
+                for (const p of msg.data) {
+                  await consume(p.producerId, p.peerId);
+                }
+                break;
+              case "producerClosed":
+                closeConsumer(msg.data.producerId);
+                break;
+              case "full":
+                alert("\u623F\u95F4\u5DF2\u6EE1");
+                teardown();
+                break;
+              default:
+                break;
+            }
+          };
+        });
       }
       async function loadDevice(routerRtpCapabilities) {
         device = new mediasoupClient.Device();
         await device.load({ routerRtpCapabilities });
       }
-      async function createTransports() {
-        wsSend({ type: "createWebRtcTransport", direction: "send", roomId, peerId });
-      }
-      function waitOnce(type) {
+      function waitOnce(type, predicate = () => true) {
         return new Promise((resolve) => {
           const handler = (evt) => {
             const msg = JSON.parse(evt.data);
-            if (msg.type === type) {
+            if (msg.type === type && predicate(msg.data)) {
               ws.removeEventListener("message", handler);
               resolve(msg.data);
             }
@@ -12046,19 +12050,18 @@
         sendTransport = device.createSendTransport(data);
         sendTransport.on("connect", ({ dtlsParameters }, cb, eb) => {
           wsSend({ type: "connectWebRtcTransport", roomId, peerId, transportId: sendTransport.id, dtlsParameters });
-          cb();
+          waitOnce("transportConnected", (d) => d.transportId === sendTransport.id).then(() => cb()).catch(eb);
         });
         sendTransport.on("produce", ({ kind, rtpParameters }, cb, eb) => {
           wsSend({ type: "produce", roomId, peerId, transportId: sendTransport.id, kind, rtpParameters });
           waitOnce("produced").then(({ producerId }) => cb({ id: producerId })).catch(eb);
         });
-        wsSend({ type: "createWebRtcTransport", direction: "recv", roomId, peerId });
       }
       async function setupRecvTransport(data) {
         recvTransport = device.createRecvTransport(data);
         recvTransport.on("connect", ({ dtlsParameters }, cb, eb) => {
           wsSend({ type: "connectWebRtcTransport", roomId, peerId, transportId: recvTransport.id, dtlsParameters });
-          cb();
+          waitOnce("transportConnected", (d) => d.transportId === recvTransport.id).then(() => cb()).catch(eb);
         });
       }
       async function startProducers() {
@@ -12204,12 +12207,17 @@
         roomInput.value = "nova-" + Math.random().toString(36).slice(2, 8);
       });
       btnConnect?.addEventListener("click", async () => {
-        await connectSignaling();
+        try {
+          await connectSignaling();
+        } catch (e) {
+          return;
+        }
         const rtpCaps = await waitOnce("routerRtpCapabilities");
         await loadDevice(rtpCaps);
         wsSend({ type: "createWebRtcTransport", direction: "send", roomId, peerId });
         const sendData = await waitOnce("webRtcTransportCreated");
         await setupSendTransport(sendData);
+        wsSend({ type: "createWebRtcTransport", direction: "recv", roomId, peerId });
         const recvData = await waitOnce("webRtcTransportCreated");
         await setupRecvTransport(recvData);
         await startProducers();
