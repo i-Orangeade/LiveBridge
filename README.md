@@ -1,74 +1,71 @@
 🚀 LiveBridge
 
-🔥 A browser-native multi-user conferencing / live streaming system built with WebRTC + SFU (mediasoup), supporting low-latency real-time interaction across devices.
+🔥 基于 WebRTC + SFU（mediasoup） 的浏览器原生多人会议 / 直播系统
+支持低延迟多人互动、跨设备实时连接
 
-✨ Features
+✨ 功能特性
 
-✅ Browser-based — No installation required, join directly via web
+✅ 纯浏览器运行：无需安装客户端，打开网页即可加入会议
 
-✅ SFU Architecture — Efficient multi-user streaming with reduced bandwidth vs P2P
+✅ SFU 架构：支持多人直播 / 会议，带宽占用远低于 P2P
 
-✅ Adaptive Bitrate — Automatically adjusts video quality based on network conditions
+✅ 自适应码率：根据网络状况自动调整视频质量
 
-✅ Room Management — Auto-generated room IDs for quick sharing
+✅ 房间管理：随机生成房间号，快速邀请他人加入
 
-✅ Device Controls — Toggle mic/camera and switch input devices
+✅ 设备控制：麦克风 / 摄像头开关、设备选择
 
-✅ Secure Communication — HTTPS + WSS for modern browser compatibility
+✅ 安全传输：HTTPS + WSS，兼容现代浏览器
 
-📦 Project Structure
+📦 项目结构
 LiveBridge/
-├── public/          # Frontend static assets (app.js, styles, etc.)
-├── src/             # Core business logic
-├── index.html       # Main entry page
-├── server.js        # SFU signaling / media server (Node.js)
-├── package.json     # Dependencies
-├── build.js         # Build script
-└── README.md        # Project documentation
-🚀 Quick Start (Local Development)
-1. Requirements
+├── public/          # 前端静态资源（app.js、样式等）
+├── src/             # 核心业务代码
+├── index.html       # 主页面
+├── server.js        # SFU 信令 / 媒体服务器（Node.js）
+├── package.json     # 依赖管理
+├── build.js         # 构建脚本
+└── README.md        # 项目说明
+🚀 快速开始（本地运行）
+1️⃣ 环境要求
 
 Node.js ≥ 18.0.0
 
 npm ≥ 8.0.0
 
-Modern browser:
+现代浏览器（Chrome ≥ 88 / Edge ≥ 88 / Firefox ≥ 78）
 
-Chrome ≥ 88
-
-Edge ≥ 88
-
-Firefox ≥ 78
-
-2. Clone the Repository
+2️⃣ 克隆项目
 git clone https://github.com/i-Orangeade/LiveBridge.git
 cd LiveBridge
-3. Install Dependencies
+3️⃣ 安装依赖
 npm install
-4. Start the SFU Server
+4️⃣ 启动 SFU 服务器
 node server.js
-5. Access the App
+5️⃣ 访问页面
 
-Local: http://localhost:8080
+本地开发：http://localhost:8080
 
-Production: Use Nginx + HTTPS (see deployment below)
+生产环境：使用 Nginx + HTTPS（见下方部署）
 
-☁️ Deployment Guide (Ubuntu 20.04+)
-1. Server Preparation
+☁️ 云服务器部署教程（Ubuntu 20.04+）
+1️⃣ 准备服务器
 
-Ubuntu 20.04 / 22.04 server (recommended: 2 CPU / 4GB RAM)
+Ubuntu 20.04 / 22.04
 
-Domain name (e.g., livebridge.cn)
+推荐配置：2 核 4G 以上
 
-Open ports:
+已绑定域名（如：livebridge.cn）
+
+开放端口：
 
 80/tcp
 
 443/tcp
 
-30000–40000/udp (WebRTC media)
+30000-40000/udp（WebRTC 媒体流）
 
-2. Install Dependencies
+2️⃣ 安装依赖
 apt update && apt upgrade -y
 
 curl -fsSL https://deb.nodesource.com/setup_18.x | bash -
@@ -76,16 +73,20 @@ apt install nodejs -y
 
 apt install nginx -y
 apt install certbot python3-certbot-nginx -y
-3. Deploy Project
+3️⃣ 克隆项目
 cd /var/www
 git clone https://github.com/i-Orangeade/LiveBridge.git
 cd LiveBridge
-npm install
-4. Configure Nginx
 
-Create config:
+npm install
+4️⃣ 配置 Nginx 反向代理
+
+创建文件：
 
 /etc/nginx/sites-available/livebridge.conf
+
+内容如下：
+
 server {
     listen 80;
     server_name livebridge.cn;
@@ -123,81 +124,73 @@ server {
     }
 }
 
-Enable config:
+启用配置：
 
 ln -s /etc/nginx/sites-available/livebridge.conf /etc/nginx/sites-enabled/
 nginx -t && systemctl reload nginx
-5. Obtain SSL Certificate
+5️⃣ 申请 SSL 证书
 certbot --nginx -d livebridge.cn
-6. Run Service with PM2
+6️⃣ 使用 PM2 后台运行
 npm install -g pm2
+
 pm2 start server.js --name livebridge
 pm2 startup
 pm2 save
-📖 Usage
+📖 使用说明
 
-Create Room
-Open https://livebridge.cn — a random room ID will be generated automatically.
+🎯 创建房间：访问网站自动生成房间号
 
-Join Room
-Enter the same room ID and your nickname, then click "Join Room".
+👥 加入房间：输入相同房间号 + 昵称
 
-Device Controls
-Toggle microphone/camera or switch input devices.
+🎙 设备控制：开关麦克风 / 摄像头、切换设备
 
-Real-Time Interaction
-Multiple participants can join and share streams simultaneously.
+📡 多人互动：所有用户共享同一房间流
 
-🛠️ Tech Stack
+🛠️ 技术栈
 
-Frontend: Vanilla JavaScript + WebRTC API + mediasoup-client
+前端：原生 JavaScript + WebRTC API + mediasoup-client
 
-Backend: Node.js + mediasoup (SFU) + WebSocket
+后端：Node.js + mediasoup（SFU）+ WebSocket
 
-Deployment: Nginx + SSL + PM2
+部署：Nginx + SSL + PM2
 
-Protocols: HTTPS + WSS + WebRTC (UDP/TCP)
+协议：HTTPS + WSS + WebRTC（UDP/TCP）
 
-🤝 Contributing
+🤝 贡献指南
 
-Contributions are welcome!
+欢迎提交 Issue 和 Pull Request！
 
-Fork the repository
-
-Create a feature branch
-
+# 1. Fork 仓库
+# 2. 创建分支
 git checkout -b feature/AmazingFeature
 
-Commit your changes
-
+# 3. 提交代码
 git commit -m "Add some AmazingFeature"
 
-Push to the branch
-
+# 4. 推送分支
 git push origin feature/AmazingFeature
 
-Open a Pull Request
+然后在 GitHub 上发起 Pull Request 🎉
 
-📄 License
+📄 许可证
 
-This project is licensed under the MIT License.
+本项目基于 MIT License 开源
 
-💡 FAQ
+💡 常见问题
+❌ 连接失败 / 显示已断开
 
-❓ Connection failed / Disconnected
+检查 pm2 status
 
-Check pm2 status
+检查 nginx -t
 
-Verify nginx -t
+浏览器 F12 → Network → WS
 
-Inspect browser DevTools → Network → WebSocket
+📉 视频卡顿 / 延迟高
 
-❓ High latency / video lag
+检查服务器带宽
 
-Check server bandwidth
+确认 UDP 30000-40000 端口已开放
 
-Ensure UDP ports 30000–40000 are open
+⚠️ 浏览器安全警告
 
-❓ Browser security warning
-
-HTTPS is required for WebRTC
+必须使用 HTTPS 访问
