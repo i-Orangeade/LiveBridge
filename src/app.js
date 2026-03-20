@@ -94,6 +94,13 @@ let ws = null;
 let roomId = '';
 let peerId = randomId();
 let username = '';
+let manualLeave = false;
+let reconnectAttempt = 0;
+let reconnectTimer = null;
+let heartbeatId = null;
+let wantCam = false;
+let wantMic = false;
+let pendingRouterRtpCaps = null;
 
 let device = null;
 let sendTransport = null;
@@ -110,12 +117,87 @@ const peerTiles = new Map();
 let pinnedPeerId = null;
 
 function wsSend(msg) {
-  ws?.send(JSON.stringify(msg));
+  if (!ws || ws.readyState !== WebSocket.OPEN) return;
+  ws.send(JSON.stringify(msg));
 }
 
 function safeText(s, fallback) {
   const t = (s || '').toString().trim();
   return t || fallback;
+}
+
+function ensureLocalPreviewStream() {
+  if (!localStream) localStream = new MediaStream();
+  if (localVideo && localVideo.srcObject !== localStream) localVideo.srcObject = localStream;
+  return localStream;
+}
+
+function resToConstraints(v) {
+  if (v === 'qvga') return { width: { ideal: 320 }, height: { ideal: 240 } };
+  if (v === 'vga') return { width: { ideal: 640 }, height: { ideal: 480 } };
+  return { width: { ideal: 1280 }, height: { ideal: 720 } };
+}
+
+function getDevicePref() {
+  try {
+    return JSON.parse(localStorage.getItem('novacall_device_pref') || 'null');
+  } catch {
+    return null;
+  }
+}
+
+async function ensureVideoTrack() {
+  const stream = ensureLocalPreviewStream();
+  const existing = stream.getVideoTracks()[0];
+  if (existing) return existing;
+
+  const pref = getDevicePref();
+  const res = resToConstraints(pref?.res || 'hd');
+  const video = pref?.cam
+    ? { deviceId: { exact: pref.cam }, ...res, frameRate: { ideal: 30, max: 30 } }
+    : { ...res, frameRate: { ideal: 30, max: 30 } };
+
+  const camStream = await navigator.mediaDevices.getUserMedia({ video, audio: false });
+  const track = camStream.getVideoTracks()[0];
+  if (track && track.contentHint !== undefined) track.contentHint = 'motion';
+  stream.addTrack(track);
+  return track;
+}
+
+async function ensureAudioTrack() {
+  const stream = ensureLocalPreviewStream();
+  const existing = stream.getAudioTracks()[0];
+  if (existing) return existing;
+
+  const pref = getDevicePref();
+  const audio = pref?.mic ? { deviceId: { exact: pref.mic } } : true;
+  const micStream = await navigator.mediaDevices.getUserMedia({ video: false, audio });
+  const track = micStream.getAudioTracks()[0];
+  stream.addTrack(track);
+  return track;
+}
+
+function startHeartbeat() {
+  if (heartbeatId) clearInterval(heartbeatId);
+  heartbeatId = setInterval(() => {
+    wsSend({ type: 'ping' });
+  }, 20000);
+}
+
+function stopHeartbeat() {
+  if (heartbeatId) clearInterval(heartbeatId);
+  heartbeatId = null;
+}
+
+function scheduleReconnect() {
+  if (manualLeave) return;
+  reconnectAttempt += 1;
+  const delay = Math.min(15000, 1000 * Math.pow(2, Math.min(reconnectAttempt, 4)));
+  setStatus(false, `已断开，${Math.round(delay / 1000)}s 后重连…`);
+  if (reconnectTimer) clearTimeout(reconnectTimer);
+  reconnectTimer = setTimeout(() => {
+    reconnect().catch(() => {});
+  }, delay);
 }
 
 function ensurePeerTile(peerId) {
@@ -209,25 +291,13 @@ function updatePinnedUI() {
 }
 
 async function ensureLocalStream() {
-  if (localStream) return localStream;
   try {
-    localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-  } catch (e) {
-    console.warn('Failed to get both video and audio, trying audio only', e);
-    localStream = await navigator.mediaDevices.getUserMedia({ video: false, audio: true });
+    await ensureVideoTrack();
+    await ensureAudioTrack();
+  } catch {
+    await ensureAudioTrack();
   }
-  
-  if (localVideo) {
-    localVideo.srcObject = localStream;
-  }
-
-  // 同步 UI：开启摄像头/麦克风后移除红斜线（toggle-off）
-  const v = localStream.getVideoTracks()[0];
-  const a = localStream.getAudioTracks()[0];
-  btnToggleCam?.classList.toggle('toggle-off', !(v?.enabled ?? false));
-  btnToggleMic?.classList.toggle('toggle-off', !(a?.enabled ?? false));
-
-  return localStream;
+  return ensureLocalPreviewStream();
 }
 
 function connectSignaling() {
@@ -243,30 +313,45 @@ function connectSignaling() {
 
     setStatus(false, '连接中…');
     btnConnect.disabled = true;
+    manualLeave = false;
+    ensureLocalPreviewStream();
+    enterCallPage(roomId);
 
     ws = new WebSocket(url);
+    pendingRouterRtpCaps = waitOnce('routerRtpCapabilities');
 
     ws.onopen = () => {
       setStatus(true, '已连接');
-      enterCallPage(roomId);
       wsSend({ type: 'join', roomId, peerId, name: username });
+      startHeartbeat();
       resolve();
     };
 
     ws.onclose = () => {
+      stopHeartbeat();
       setStatus(false, '已断开');
       btnConnect.disabled = false;
+      if (!manualLeave) scheduleReconnect();
     };
 
     ws.onerror = (e) => {
+      stopHeartbeat();
       setStatus(false, '连接出错');
       btnConnect.disabled = false;
+      enterJoinPage();
       reject(e);
     };
 
     ws.onmessage = async (evt) => {
-      const msg = JSON.parse(evt.data);
+      let msg;
+      try {
+        msg = JSON.parse(evt.data);
+      } catch {
+        return;
+      }
       switch (msg.type) {
+        case 'pong':
+          break;
         case 'newProducers':
           // 订阅新 producer
           for (const p of msg.data) {
@@ -279,6 +364,9 @@ function connectSignaling() {
         case 'full':
           alert('房间已满');
           teardown();
+          break;
+        case 'error':
+          setStatus(false, '发生错误');
           break;
         default:
           break;
@@ -295,7 +383,12 @@ async function loadDevice(routerRtpCapabilities) {
 function waitOnce(type, predicate = () => true) {
   return new Promise((resolve) => {
     const handler = (evt) => {
-      const msg = JSON.parse(evt.data);
+      let msg;
+      try {
+        msg = JSON.parse(evt.data);
+      } catch {
+        return;
+      }
       if (msg.type === type && predicate(msg.data)) {
         ws.removeEventListener('message', handler);
         resolve(msg.data);
@@ -315,7 +408,7 @@ async function setupSendTransport(data) {
 
   sendTransport.on('produce', ({ kind, rtpParameters }, cb, eb) => {
     wsSend({ type: 'produce', roomId, peerId, transportId: sendTransport.id, kind, rtpParameters });
-    waitOnce('produced').then(({ producerId }) => cb({ id: producerId })).catch(eb);
+    waitOnce('produced', (d) => d.kind === kind).then(({ producerId }) => cb({ id: producerId })).catch(eb);
   });
 }
 
@@ -328,23 +421,31 @@ async function setupRecvTransport(data) {
 }
 
 async function startProducers() {
-  const stream = await ensureLocalStream();
-  const videoTrack = stream.getVideoTracks()[0];
-  const audioTrack = stream.getAudioTracks()[0];
+  if (!sendTransport) return;
 
-  if (videoTrack && !camProducer) {
-    camProducer = await sendTransport.produce({ track: videoTrack });
+  if (wantCam && !camProducer) {
+    const videoTrack = await ensureVideoTrack();
+    if (videoTrack) {
+      camProducer = await sendTransport.produce({
+        track: videoTrack,
+        encodings: [{ maxBitrate: 2_500_000, scalabilityMode: 'L1T3' }],
+        codecOptions: { videoGoogleStartBitrate: 1200 }
+      });
+    }
   }
-  if (audioTrack && !micProducer) {
-    micProducer = await sendTransport.produce({ track: audioTrack });
+
+  if (wantMic && !micProducer) {
+    const audioTrack = await ensureAudioTrack();
+    if (audioTrack) {
+      micProducer = await sendTransport.produce({ track: audioTrack });
+    }
   }
 }
 
 async function consume(producerId, remotePeerId) {
   if (!recvTransport) return;
   wsSend({ type: 'consume', roomId, peerId, producerId, rtpCapabilities: device.rtpCapabilities });
-  const data = await waitOnce('consumed');
-  if (data.producerId !== producerId) return;
+  const data = await waitOnce('consumed', (d) => d.producerId === producerId);
 
   const consumer = await recvTransport.consume({
     id: data.id,
@@ -431,11 +532,76 @@ function closeConsumer(producerId) {
   }
 }
 
-function teardown() {
+function resetRemoteOnly() {
   try { camProducer?.close(); } catch {}
   try { micProducer?.close(); } catch {}
   camProducer = null;
   micProducer = null;
+
+  for (const [pid] of consumers) closeConsumer(pid);
+
+  try { sendTransport?.close(); } catch {}
+  try { recvTransport?.close(); } catch {}
+  sendTransport = null;
+  recvTransport = null;
+
+  device = null;
+}
+
+async function setupSfuAfterJoin() {
+  const rtpCaps = pendingRouterRtpCaps ? await pendingRouterRtpCaps : await waitOnce('routerRtpCapabilities');
+  pendingRouterRtpCaps = null;
+  await loadDevice(rtpCaps);
+
+  wsSend({ type: 'createWebRtcTransport', direction: 'send', roomId, peerId });
+  const sendData = await waitOnce('webRtcTransportCreated');
+  await setupSendTransport(sendData);
+
+  wsSend({ type: 'createWebRtcTransport', direction: 'recv', roomId, peerId });
+  const recvData = await waitOnce('webRtcTransportCreated');
+  await setupRecvTransport(recvData);
+
+  await startProducers();
+
+  wsSend({ type: 'getProducers', roomId, peerId });
+  const existing = await waitOnce('producersList');
+  for (const p of existing) {
+    await consume(p.producerId, p.peerId);
+  }
+
+  if (btnToggleCam) btnToggleCam.disabled = false;
+  if (btnToggleMic) btnToggleMic.disabled = false;
+}
+
+async function reconnect() {
+  resetRemoteOnly();
+  try {
+    await connectSignaling();
+  } catch {
+    return;
+  }
+
+  try {
+    await setupSfuAfterJoin();
+    setStatus(true, '已重连');
+  } catch {
+    scheduleReconnect();
+  }
+}
+
+function teardown() {
+  manualLeave = true;
+  stopHeartbeat();
+  if (reconnectTimer) clearTimeout(reconnectTimer);
+  reconnectTimer = null;
+  reconnectAttempt = 0;
+
+  try { camProducer?.close(); } catch {}
+  try { micProducer?.close(); } catch {}
+  camProducer = null;
+  micProducer = null;
+  wantCam = false;
+  wantMic = false;
 
   for (const [pid] of consumers) closeConsumer(pid);
 
@@ -474,34 +640,15 @@ btnGenerateRoom?.addEventListener('click', () => {
 });
 
 btnConnect?.addEventListener('click', async () => {
+  if (btnToggleCam) btnToggleCam.disabled = true;
+  if (btnToggleMic) btnToggleMic.disabled = true;
   try {
     await connectSignaling();
   } catch (e) {
     return;
   }
-
-  // 服务器在 join 后会下发 routerRtpCapabilities，然后我们再创建 transports
-  const rtpCaps = await waitOnce('routerRtpCapabilities');
-  await loadDevice(rtpCaps);
-
-  // send transport
-  wsSend({ type: 'createWebRtcTransport', direction: 'send', roomId, peerId });
-  const sendData = await waitOnce('webRtcTransportCreated');
-  await setupSendTransport(sendData);
-
-  // recv transport
-  wsSend({ type: 'createWebRtcTransport', direction: 'recv', roomId, peerId });
-  const recvData = await waitOnce('webRtcTransportCreated');
-  await setupRecvTransport(recvData);
-
-  await startProducers();
-
-  // 拉取现有 producers
-  wsSend({ type: 'getProducers', roomId, peerId });
-  const existing = await waitOnce('producersList');
-  for (const p of existing) {
-    await consume(p.producerId, p.peerId);
-  }
+  reconnectAttempt = 0;
+  await setupSfuAfterJoin();
 });
 
 btnBackToJoin?.addEventListener('click', () => {
@@ -514,18 +661,48 @@ btnHangup?.addEventListener('click', () => {
 
 // 摄像头/麦克风按钮：只做 track enabled 切换（producer 会继续存在，SaaS 常见做法）
 btnToggleCam?.addEventListener('click', async () => {
-  await ensureLocalStream();
-  const t = localStream.getVideoTracks()[0];
+  if (!sendTransport) return;
+  ensureLocalPreviewStream();
+
+  if (!camProducer) {
+    try {
+      wantCam = true;
+      btnToggleCam.classList.remove('toggle-off');
+      await startProducers();
+    } catch {
+      wantCam = false;
+      btnToggleCam.classList.add('toggle-off');
+    }
+    return;
+  }
+
+  const t = ensureLocalPreviewStream().getVideoTracks()[0];
   if (!t) return;
   t.enabled = !t.enabled;
+  wantCam = t.enabled;
   btnToggleCam.classList.toggle('toggle-off', !t.enabled);
 });
 
 btnToggleMic?.addEventListener('click', async () => {
-  await ensureLocalStream();
-  const t = localStream.getAudioTracks()[0];
+  if (!sendTransport) return;
+  ensureLocalPreviewStream();
+
+  if (!micProducer) {
+    try {
+      wantMic = true;
+      btnToggleMic.classList.remove('toggle-off');
+      await startProducers();
+    } catch {
+      wantMic = false;
+      btnToggleMic.classList.add('toggle-off');
+    }
+    return;
+  }
+
+  const t = ensureLocalPreviewStream().getAudioTracks()[0];
   if (!t) return;
   t.enabled = !t.enabled;
+  wantMic = t.enabled;
   btnToggleMic.classList.toggle('toggle-off', !t.enabled);
 });
 
@@ -536,6 +713,13 @@ btnSwitchCam?.addEventListener('click', async () => {
 
 // 默认填充云端信令地址
 serverInput.value = CONFIG.signalingUrl;
+try {
+  const isLocalHost = location.hostname === 'localhost' || location.hostname === '127.0.0.1';
+  if (isLocalHost) {
+    const wsProto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const port = location.port || '8080';
+    serverInput.value = `${wsProto}//${location.hostname}:${port}/ws`;
+  }
+} catch {}
 enterJoinPage();
 setStatus(false, '未连接');
-

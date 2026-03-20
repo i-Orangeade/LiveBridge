@@ -36,7 +36,6 @@ const rooms = new Map();
 const roomPromises = new Map();
 
 let workerPromise = null;
-// ... (rest of getWorker)
 async function getWorker() {
   if (workerPromise) return workerPromise;
   workerPromise = (async () => {
@@ -121,8 +120,12 @@ async function createWebRtcTransport(router) {
     enableUdp: true,
     enableTcp: true,
     preferUdp: true,
-    initialAvailableOutgoingBitrate: 800_000
+    initialAvailableOutgoingBitrate: 1_800_000
   });
+
+  try {
+    await transport.setMaxIncomingBitrate(2_500_000);
+  } catch {}
 
   return transport;
 }
@@ -180,6 +183,10 @@ wss.on('connection', (ws) => {
 
     try {
       switch (msg.type) {
+        case 'ping': {
+          safeSend(ws, { type: 'pong', data: { t: Date.now() } });
+          break;
+        }
         case 'join': {
           roomId = msg.roomId;
           peerId = msg.peerId;
@@ -271,7 +278,7 @@ wss.on('connection', (ws) => {
             peer.producers.delete(producer.id);
           });
 
-          safeSend(ws, { type: 'produced', data: { producerId: producer.id } });
+          safeSend(ws, { type: 'produced', data: { producerId: producer.id, kind: producer.kind } });
 
           // 通知房间其他人：有新的 producer
           broadcastExcept(room, msg.peerId, { type: 'newProducers', data: [{ producerId: producer.id, peerId: msg.peerId }] });
@@ -391,4 +398,3 @@ server.listen(PORT, () => {
   console.log(`WS   : ws://localhost:${PORT}/ws`);
   console.log(`[mediasoup] announcedIp=${ANNOUNCED_IP} rtcPortRange=${RTC_MIN_PORT}-${RTC_MAX_PORT}`);
 });
-

@@ -4587,48 +4587,48 @@
       var toIntIfInt = function(v) {
         return String(Number(v)) === v ? Number(v) : v;
       };
-      var attachProperties = function(match, location, names, rawName) {
+      var attachProperties = function(match, location2, names, rawName) {
         if (rawName && !names) {
-          location[rawName] = toIntIfInt(match[1]);
+          location2[rawName] = toIntIfInt(match[1]);
         } else {
           for (var i = 0; i < names.length; i += 1) {
             if (match[i + 1] != null) {
-              location[names[i]] = toIntIfInt(match[i + 1]);
+              location2[names[i]] = toIntIfInt(match[i + 1]);
             }
           }
         }
       };
-      var parseReg = function(obj, location, content) {
+      var parseReg = function(obj, location2, content) {
         var needsBlank = obj.name && obj.names;
-        if (obj.push && !location[obj.push]) {
-          location[obj.push] = [];
-        } else if (needsBlank && !location[obj.name]) {
-          location[obj.name] = {};
+        if (obj.push && !location2[obj.push]) {
+          location2[obj.push] = [];
+        } else if (needsBlank && !location2[obj.name]) {
+          location2[obj.name] = {};
         }
         var keyLocation = obj.push ? {} : (
           // blank object that will be pushed
-          needsBlank ? location[obj.name] : location
+          needsBlank ? location2[obj.name] : location2
         );
         attachProperties(content.match(obj.reg), keyLocation, obj.names, obj.name);
         if (obj.push) {
-          location[obj.push].push(keyLocation);
+          location2[obj.push].push(keyLocation);
         }
       };
       var grammar = require_grammar();
       var validLine = RegExp.prototype.test.bind(/^([a-z])=(.*)/);
       exports.parse = function(sdp) {
-        var session = {}, media = [], location = session;
+        var session = {}, media = [], location2 = session;
         sdp.split(/(\r\n|\r|\n)/).filter(validLine).forEach(function(l) {
           var type = l[0];
           var content = l.slice(2);
           if (type === "m") {
             media.push({ rtp: [], fmtp: [] });
-            location = media[media.length - 1];
+            location2 = media[media.length - 1];
           }
           for (var j = 0; j < (grammar[type] || []).length; j += 1) {
             var obj = grammar[type][j];
             if (obj.reg.test(content)) {
-              return parseReg(obj, location, content);
+              return parseReg(obj, location2, content);
             }
           }
         });
@@ -4715,20 +4715,20 @@
           }
         });
       };
-      var makeLine = function(type, obj, location) {
-        var str = obj.format instanceof Function ? obj.format(obj.push ? location : location[obj.name]) : obj.format;
+      var makeLine = function(type, obj, location2) {
+        var str = obj.format instanceof Function ? obj.format(obj.push ? location2 : location2[obj.name]) : obj.format;
         var args = [type + "=" + str];
         if (obj.names) {
           for (var i = 0; i < obj.names.length; i += 1) {
             var n = obj.names[i];
             if (obj.name) {
-              args.push(location[obj.name][n]);
+              args.push(location2[obj.name][n]);
             } else {
-              args.push(location[obj.names[i]]);
+              args.push(location2[obj.names[i]]);
             }
           }
         } else {
-          args.push(location[obj.name]);
+          args.push(location2[obj.name]);
         }
         return format.apply(null, args);
       };
@@ -11869,6 +11869,13 @@
       var roomId = "";
       var peerId = randomId();
       var username = "";
+      var manualLeave = false;
+      var reconnectAttempt = 0;
+      var reconnectTimer = null;
+      var heartbeatId = null;
+      var wantCam = false;
+      var wantMic = false;
+      var pendingRouterRtpCaps = null;
       var device = null;
       var sendTransport = null;
       var recvTransport = null;
@@ -11879,11 +11886,74 @@
       var peerTiles = /* @__PURE__ */ new Map();
       var pinnedPeerId = null;
       function wsSend(msg) {
-        ws?.send(JSON.stringify(msg));
+        if (!ws || ws.readyState !== WebSocket.OPEN) return;
+        ws.send(JSON.stringify(msg));
       }
       function safeText(s, fallback) {
         const t = (s || "").toString().trim();
         return t || fallback;
+      }
+      function ensureLocalPreviewStream() {
+        if (!localStream) localStream = new MediaStream();
+        if (localVideo && localVideo.srcObject !== localStream) localVideo.srcObject = localStream;
+        return localStream;
+      }
+      function resToConstraints(v) {
+        if (v === "qvga") return { width: { ideal: 320 }, height: { ideal: 240 } };
+        if (v === "vga") return { width: { ideal: 640 }, height: { ideal: 480 } };
+        return { width: { ideal: 1280 }, height: { ideal: 720 } };
+      }
+      function getDevicePref() {
+        try {
+          return JSON.parse(localStorage.getItem("novacall_device_pref") || "null");
+        } catch {
+          return null;
+        }
+      }
+      async function ensureVideoTrack() {
+        const stream = ensureLocalPreviewStream();
+        const existing = stream.getVideoTracks()[0];
+        if (existing) return existing;
+        const pref = getDevicePref();
+        const res = resToConstraints(pref?.res || "hd");
+        const video = pref?.cam ? { deviceId: { exact: pref.cam }, ...res, frameRate: { ideal: 30, max: 30 } } : { ...res, frameRate: { ideal: 30, max: 30 } };
+        const camStream = await navigator.mediaDevices.getUserMedia({ video, audio: false });
+        const track = camStream.getVideoTracks()[0];
+        if (track && track.contentHint !== void 0) track.contentHint = "motion";
+        stream.addTrack(track);
+        return track;
+      }
+      async function ensureAudioTrack() {
+        const stream = ensureLocalPreviewStream();
+        const existing = stream.getAudioTracks()[0];
+        if (existing) return existing;
+        const pref = getDevicePref();
+        const audio = pref?.mic ? { deviceId: { exact: pref.mic } } : true;
+        const micStream = await navigator.mediaDevices.getUserMedia({ video: false, audio });
+        const track = micStream.getAudioTracks()[0];
+        stream.addTrack(track);
+        return track;
+      }
+      function startHeartbeat() {
+        if (heartbeatId) clearInterval(heartbeatId);
+        heartbeatId = setInterval(() => {
+          wsSend({ type: "ping" });
+        }, 2e4);
+      }
+      function stopHeartbeat() {
+        if (heartbeatId) clearInterval(heartbeatId);
+        heartbeatId = null;
+      }
+      function scheduleReconnect() {
+        if (manualLeave) return;
+        reconnectAttempt += 1;
+        const delay = Math.min(15e3, 1e3 * Math.pow(2, Math.min(reconnectAttempt, 4)));
+        setStatus(false, `\u5DF2\u65AD\u5F00\uFF0C${Math.round(delay / 1e3)}s \u540E\u91CD\u8FDE\u2026`);
+        if (reconnectTimer) clearTimeout(reconnectTimer);
+        reconnectTimer = setTimeout(() => {
+          reconnect().catch(() => {
+          });
+        }, delay);
       }
       function ensurePeerTile(peerId2) {
         if (!thumbGrid) return null;
@@ -11965,23 +12035,6 @@
           setBadge(tile, "pin", pid === pinnedPeerId ? "\u5DF2\u7F6E\u9876" : "\u70B9\u51FB\u7F6E\u9876");
         }
       }
-      async function ensureLocalStream() {
-        if (localStream) return localStream;
-        try {
-          localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-        } catch (e) {
-          console.warn("Failed to get both video and audio, trying audio only", e);
-          localStream = await navigator.mediaDevices.getUserMedia({ video: false, audio: true });
-        }
-        if (localVideo) {
-          localVideo.srcObject = localStream;
-        }
-        const v = localStream.getVideoTracks()[0];
-        const a = localStream.getAudioTracks()[0];
-        btnToggleCam?.classList.toggle("toggle-off", !(v?.enabled ?? false));
-        btnToggleMic?.classList.toggle("toggle-off", !(a?.enabled ?? false));
-        return localStream;
-      }
       function connectSignaling() {
         return new Promise((resolve, reject) => {
           roomId = roomInput.value.trim();
@@ -11993,25 +12046,40 @@
           }
           setStatus(false, "\u8FDE\u63A5\u4E2D\u2026");
           btnConnect.disabled = true;
+          manualLeave = false;
+          ensureLocalPreviewStream();
+          enterCallPage(roomId);
           ws = new WebSocket(url);
+          pendingRouterRtpCaps = waitOnce("routerRtpCapabilities");
           ws.onopen = () => {
             setStatus(true, "\u5DF2\u8FDE\u63A5");
-            enterCallPage(roomId);
             wsSend({ type: "join", roomId, peerId, name: username });
+            startHeartbeat();
             resolve();
           };
           ws.onclose = () => {
+            stopHeartbeat();
             setStatus(false, "\u5DF2\u65AD\u5F00");
             btnConnect.disabled = false;
+            if (!manualLeave) scheduleReconnect();
           };
           ws.onerror = (e) => {
+            stopHeartbeat();
             setStatus(false, "\u8FDE\u63A5\u51FA\u9519");
             btnConnect.disabled = false;
+            enterJoinPage();
             reject(e);
           };
           ws.onmessage = async (evt) => {
-            const msg = JSON.parse(evt.data);
+            let msg;
+            try {
+              msg = JSON.parse(evt.data);
+            } catch {
+              return;
+            }
             switch (msg.type) {
+              case "pong":
+                break;
               case "newProducers":
                 for (const p of msg.data) {
                   await consume(p.producerId, p.peerId);
@@ -12023,6 +12091,9 @@
               case "full":
                 alert("\u623F\u95F4\u5DF2\u6EE1");
                 teardown();
+                break;
+              case "error":
+                setStatus(false, "\u53D1\u751F\u9519\u8BEF");
                 break;
               default:
                 break;
@@ -12037,7 +12108,12 @@
       function waitOnce(type, predicate = () => true) {
         return new Promise((resolve) => {
           const handler = (evt) => {
-            const msg = JSON.parse(evt.data);
+            let msg;
+            try {
+              msg = JSON.parse(evt.data);
+            } catch {
+              return;
+            }
             if (msg.type === type && predicate(msg.data)) {
               ws.removeEventListener("message", handler);
               resolve(msg.data);
@@ -12054,7 +12130,7 @@
         });
         sendTransport.on("produce", ({ kind, rtpParameters }, cb, eb) => {
           wsSend({ type: "produce", roomId, peerId, transportId: sendTransport.id, kind, rtpParameters });
-          waitOnce("produced").then(({ producerId }) => cb({ id: producerId })).catch(eb);
+          waitOnce("produced", (d) => d.kind === kind).then(({ producerId }) => cb({ id: producerId })).catch(eb);
         });
       }
       async function setupRecvTransport(data) {
@@ -12065,21 +12141,28 @@
         });
       }
       async function startProducers() {
-        const stream = await ensureLocalStream();
-        const videoTrack = stream.getVideoTracks()[0];
-        const audioTrack = stream.getAudioTracks()[0];
-        if (videoTrack && !camProducer) {
-          camProducer = await sendTransport.produce({ track: videoTrack });
+        if (!sendTransport) return;
+        if (wantCam && !camProducer) {
+          const videoTrack = await ensureVideoTrack();
+          if (videoTrack) {
+            camProducer = await sendTransport.produce({
+              track: videoTrack,
+              encodings: [{ maxBitrate: 25e5, scalabilityMode: "L1T3" }],
+              codecOptions: { videoGoogleStartBitrate: 1200 }
+            });
+          }
         }
-        if (audioTrack && !micProducer) {
-          micProducer = await sendTransport.produce({ track: audioTrack });
+        if (wantMic && !micProducer) {
+          const audioTrack = await ensureAudioTrack();
+          if (audioTrack) {
+            micProducer = await sendTransport.produce({ track: audioTrack });
+          }
         }
       }
       async function consume(producerId, remotePeerId) {
         if (!recvTransport) return;
         wsSend({ type: "consume", roomId, peerId, producerId, rtpCapabilities: device.rtpCapabilities });
-        const data = await waitOnce("consumed");
-        if (data.producerId !== producerId) return;
+        const data = await waitOnce("consumed", (d) => d.producerId === producerId);
         const consumer = await recvTransport.consume({
           id: data.id,
           producerId: data.producerId,
@@ -12158,7 +12241,7 @@
           }
         }
       }
-      function teardown() {
+      function resetRemoteOnly() {
         try {
           camProducer?.close();
         } catch {
@@ -12169,6 +12252,70 @@
         }
         camProducer = null;
         micProducer = null;
+        for (const [pid] of consumers) closeConsumer(pid);
+        try {
+          sendTransport?.close();
+        } catch {
+        }
+        try {
+          recvTransport?.close();
+        } catch {
+        }
+        sendTransport = null;
+        recvTransport = null;
+        device = null;
+      }
+      async function setupSfuAfterJoin() {
+        const rtpCaps = pendingRouterRtpCaps ? await pendingRouterRtpCaps : await waitOnce("routerRtpCapabilities");
+        pendingRouterRtpCaps = null;
+        await loadDevice(rtpCaps);
+        wsSend({ type: "createWebRtcTransport", direction: "send", roomId, peerId });
+        const sendData = await waitOnce("webRtcTransportCreated");
+        await setupSendTransport(sendData);
+        wsSend({ type: "createWebRtcTransport", direction: "recv", roomId, peerId });
+        const recvData = await waitOnce("webRtcTransportCreated");
+        await setupRecvTransport(recvData);
+        await startProducers();
+        wsSend({ type: "getProducers", roomId, peerId });
+        const existing = await waitOnce("producersList");
+        for (const p of existing) {
+          await consume(p.producerId, p.peerId);
+        }
+        if (btnToggleCam) btnToggleCam.disabled = false;
+        if (btnToggleMic) btnToggleMic.disabled = false;
+      }
+      async function reconnect() {
+        resetRemoteOnly();
+        try {
+          await connectSignaling();
+        } catch {
+          return;
+        }
+        try {
+          await setupSfuAfterJoin();
+          setStatus(true, "\u5DF2\u91CD\u8FDE");
+        } catch {
+          scheduleReconnect();
+        }
+      }
+      function teardown() {
+        manualLeave = true;
+        stopHeartbeat();
+        if (reconnectTimer) clearTimeout(reconnectTimer);
+        reconnectTimer = null;
+        reconnectAttempt = 0;
+        try {
+          camProducer?.close();
+        } catch {
+        }
+        try {
+          micProducer?.close();
+        } catch {
+        }
+        camProducer = null;
+        micProducer = null;
+        wantCam = false;
+        wantMic = false;
         for (const [pid] of consumers) closeConsumer(pid);
         try {
           sendTransport?.close();
@@ -12207,25 +12354,15 @@
         roomInput.value = "nova-" + Math.random().toString(36).slice(2, 8);
       });
       btnConnect?.addEventListener("click", async () => {
+        if (btnToggleCam) btnToggleCam.disabled = true;
+        if (btnToggleMic) btnToggleMic.disabled = true;
         try {
           await connectSignaling();
         } catch (e) {
           return;
         }
-        const rtpCaps = await waitOnce("routerRtpCapabilities");
-        await loadDevice(rtpCaps);
-        wsSend({ type: "createWebRtcTransport", direction: "send", roomId, peerId });
-        const sendData = await waitOnce("webRtcTransportCreated");
-        await setupSendTransport(sendData);
-        wsSend({ type: "createWebRtcTransport", direction: "recv", roomId, peerId });
-        const recvData = await waitOnce("webRtcTransportCreated");
-        await setupRecvTransport(recvData);
-        await startProducers();
-        wsSend({ type: "getProducers", roomId, peerId });
-        const existing = await waitOnce("producersList");
-        for (const p of existing) {
-          await consume(p.producerId, p.peerId);
-        }
+        reconnectAttempt = 0;
+        await setupSfuAfterJoin();
       });
       btnBackToJoin?.addEventListener("click", () => {
         teardown();
@@ -12234,23 +12371,58 @@
         teardown();
       });
       btnToggleCam?.addEventListener("click", async () => {
-        await ensureLocalStream();
-        const t = localStream.getVideoTracks()[0];
+        if (!sendTransport) return;
+        ensureLocalPreviewStream();
+        if (!camProducer) {
+          try {
+            wantCam = true;
+            btnToggleCam.classList.remove("toggle-off");
+            await startProducers();
+          } catch {
+            wantCam = false;
+            btnToggleCam.classList.add("toggle-off");
+          }
+          return;
+        }
+        const t = ensureLocalPreviewStream().getVideoTracks()[0];
         if (!t) return;
         t.enabled = !t.enabled;
+        wantCam = t.enabled;
         btnToggleCam.classList.toggle("toggle-off", !t.enabled);
       });
       btnToggleMic?.addEventListener("click", async () => {
-        await ensureLocalStream();
-        const t = localStream.getAudioTracks()[0];
+        if (!sendTransport) return;
+        ensureLocalPreviewStream();
+        if (!micProducer) {
+          try {
+            wantMic = true;
+            btnToggleMic.classList.remove("toggle-off");
+            await startProducers();
+          } catch {
+            wantMic = false;
+            btnToggleMic.classList.add("toggle-off");
+          }
+          return;
+        }
+        const t = ensureLocalPreviewStream().getAudioTracks()[0];
         if (!t) return;
         t.enabled = !t.enabled;
+        wantMic = t.enabled;
         btnToggleMic.classList.toggle("toggle-off", !t.enabled);
       });
       btnSwitchCam?.addEventListener("click", async () => {
         alert("\u5207\u6362\u6444\u50CF\u5934\uFF1ASFU \u7248\u672C\u540E\u7EED\u8865\u5145 replaceTrack \u903B\u8F91");
       });
       serverInput.value = CONFIG.signalingUrl;
+      try {
+        const isLocalHost = location.hostname === "localhost" || location.hostname === "127.0.0.1";
+        if (isLocalHost) {
+          const wsProto = location.protocol === "https:" ? "wss:" : "ws:";
+          const port = location.port || "8080";
+          serverInput.value = `${wsProto}//${location.hostname}:${port}/ws`;
+        }
+      } catch {
+      }
       enterJoinPage();
       setStatus(false, "\u672A\u8FDE\u63A5");
     }
