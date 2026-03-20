@@ -120,7 +120,14 @@ async function createWebRtcTransport(router) {
     enableUdp: true,
     enableTcp: true,
     preferUdp: true,
-    initialAvailableOutgoingBitrate: 1_800_000
+    initialAvailableOutgoingBitrate: 1_800_000,
+    turnServers: [
+      {
+        urls: "turn:49.233.175.236:3478",
+        username: "test",
+        credential: "test123"
+      }
+    ]
   });
 
   try {
