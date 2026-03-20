@@ -1,6 +1,0 @@
-C:/Users/29304/Desktop/cursor/webrtc/build/CMakeFiles/ALL_BUILD.dir
-C:/Users/29304/Desktop/cursor/webrtc/build/CMakeFiles/ZERO_CHECK.dir
-C:/Users/29304/Desktop/cursor/webrtc/build/server/CMakeFiles/signaling_server.dir
-C:/Users/29304/Desktop/cursor/webrtc/build/server/CMakeFiles/ALL_BUILD.dir
-C:/Users/29304/Desktop/cursor/webrtc/build/client/CMakeFiles/camera_preview.dir
-C:/Users/29304/Desktop/cursor/webrtc/build/client/CMakeFiles/ALL_BUILD.dir
